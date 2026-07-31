@@ -59,7 +59,10 @@ class OpenAITranslator(TranslationBackend_):
     def __init__(self, settings: Settings):
         import openai
 
-        self.client = openai.OpenAI(api_key=settings.openai_api_key)
+        self.client = openai.OpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+        )
         self.model = settings.openai_model
 
     def translate(self, text: str, context: str = "") -> str:

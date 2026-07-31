@@ -1,0 +1,80 @@
+# Kakure Configuration
+# Copy this file to kakure.toml and edit as needed.
+# Settings can also be changed in the web UI (Settings tab).
+
+# Required for OpenAI translation backend
+openai_api_key = ""
+
+# Required for DeepL translation backend
+deepl_api_key = ""
+
+# ASR backend: "faster-whisper" or "kotoba-whisper"
+asr_backend = "faster-whisper"
+
+# faster-whisper settings
+whisper_model = "large-v3"
+whisper_device = "cpu"
+whisper_compute_type = "int8"
+whisper_language = "ja"
+whisper_beam_size = 5
+whisper_vad_filter = true
+
+# kotoba-whisper settings (only used when asr_backend = "kotoba-whisper")
+kotoba_whisper_model = "kotoba-tech/kotoba-whisper-v2.0"
+kotoba_whisper_chunk_length_s = 15
+
+# Translation backend: "openai" or "deepl"
+translation_backend = "openai"
+
+# OpenAI settings
+openai_model = "gpt-4o-mini"
+# Optional: custom OpenAI API base URL (for Azure, local proxies, etc.)
+openai_base_url = ""
+
+# TTS backend: "edge-tts" or "indextts"
+tts_backend = "edge-tts"
+
+# Chinese TTS voice (edge-tts backend)
+chinese_voice = "zh-CN-XiaoxiaoNeural"
+
+# TTS adjustments (edge-tts backend)
+tts_rate = "+0%"
+tts_volume = "+0%"
+tts_pitch = "+0Hz"
+
+# IndexTTS settings (only used when tts_backend = "indextts")
+# Required: path to a 3-10 second reference audio file for voice cloning
+indextts_reference_audio = ""
+# Optional: path to local model checkpoints (auto-downloads from HuggingFace if not set)
+indextts_model_dir = ""
+# Language for IndexTTS synthesis
+indextts_language = "zh"
+
+# Mixing mode: "dual", "overlay", "sequential", "whisper", "spatial"
+mix_mode = "overlay"
+
+# Volume adjustments (dB, negative = quieter)
+overlay_volume_db = -6.0
+whisper_volume_db = -15.0
+# Cross-channel volume in spatial mode (dB, ~-10.5 = 30%)
+spatial_cross_db = -10.5
+
+# Gap between JP and CN in sequential mode (milliseconds)
+sequential_gap_ms = 800
+
+# Vocal separation (Demucs) - splits background from vocals for cleaner mixing
+separate_vocals = false
+demucs_model = "htdemucs"
+demucs_device = "cpu"
+# Volume for original vocals when separated (dB, negative = quieter)
+vocals_volume_db = -6.0
+# Volume for background when separated (dB)
+background_volume_db = 0.0
+
+# Output settings
+output_format = "mp3"
+output_bitrate = "192k"
+output_sample_rate = 44100
+
+# Temp directory for intermediate files
+temp_dir = "/tmp/kakure"

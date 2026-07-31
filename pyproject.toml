@@ -27,10 +27,9 @@ dependencies = [
     "pydub>=0.25.1",
     "openai>=1.0.0",
     "deepl>=1.16.0",
-    "click>=8.1.0",
-    "rich>=13.0.0",
     "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
+    "tomlkit>=0.12.0",
+    "gradio>=4.0.0",
 ]
 
 [project.optional-dependencies]
@@ -52,7 +51,7 @@ demucs = [
 ]
 
 [project.scripts]
-kakure = "kakure.cli:cli"
+kakure = "kakure.webui:main"
 
 [tool.ruff]
 target-version = "py310"

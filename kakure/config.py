@@ -1,13 +1,24 @@
-"""Configuration module for Kakure."""
+"""Configuration module for Kakure.
+
+Settings are loaded from and saved to a TOML config file (kakure.toml by default).
+If the config file doesn't exist, built-in defaults are used.
+"""
 
 from __future__ import annotations
 
-import os
 from enum import Enum
 from pathlib import Path
 
-from pydantic import Field
-from pydantic_settings import BaseSettings
+import tomlkit
+from pydantic import BaseModel, Field
+
+# Default config file path (current working directory)
+CONFIG_PATH = Path("kakure.toml")
+
+
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
 
 
 class MixMode(str, Enum):
@@ -17,6 +28,7 @@ class MixMode(str, Enum):
     OVERLAY = "overlay"  # Chinese voice overlaid at lower volume
     SEQUENTIAL = "sequential"  # Japanese segment then Chinese translation
     WHISPER = "whisper"  # Chinese voice at very low volume (subtle)
+    SPATIAL = "spatial"  # Cross-panned stereo: JP stronger left, CN stronger right
 
 
 class ASRBackend(str, Enum):
@@ -79,8 +91,17 @@ class DemucsModel(str, Enum):
     MDX_EXTRA = "mdx_extra"  # Extra training data
 
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables and .env files."""
+# ---------------------------------------------------------------------------
+# Settings model
+# ---------------------------------------------------------------------------
+
+
+class Settings(BaseModel):
+    """Application settings with built-in defaults.
+
+    Load from TOML with ``load_settings()`` or create with defaults via ``Settings()``.
+    Save to TOML with ``save_settings()``.
+    """
 
     # ASR backend selection
     asr_backend: ASRBackend = ASRBackend.FASTER_WHISPER
@@ -101,9 +122,10 @@ class Settings(BaseSettings):
 
     # Translation
     translation_backend: TranslationBackend = TranslationBackend.OPENAI
-    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    openai_api_key: str = ""
+    openai_base_url: str = ""
     openai_model: str = "gpt-4o-mini"
-    deepl_api_key: str = Field(default="", alias="DEEPL_API_KEY")
+    deepl_api_key: str = ""
 
     # TTS backend selection
     tts_backend: TTSBackend = TTSBackend.EDGE_TTS
@@ -115,33 +137,21 @@ class Settings(BaseSettings):
     tts_pitch: str = "+0Hz"  # Pitch adjustment
 
     # IndexTTS settings
-    indextts_reference_audio: Path | None = Field(
-        default=None,
-        description="Path to reference audio for voice cloning (required for IndexTTS). "
-        "Should be 3-10 seconds of clean speech.",
-    )
-    indextts_model_dir: Path | None = Field(
-        default=None,
-        description="Path to IndexTTS model checkpoints directory. "
-        "If None, auto-downloads from HuggingFace on first use.",
-    )
-    indextts_language: str = Field(
-        default="zh",
-        description="Language for IndexTTS synthesis.",
-    )
+    indextts_reference_audio: str = ""
+    indextts_model_dir: str = ""
+    indextts_language: str = "zh"
 
     # Mixing
     mix_mode: MixMode = MixMode.OVERLAY
     overlay_volume_db: float = -6.0  # Chinese voice volume relative to original (overlay mode)
     whisper_volume_db: float = -15.0  # Chinese voice volume (whisper mode)
+    spatial_cross_db: float = -10.5  # Cross-channel volume in spatial mode (~30%, dB)
     sequential_gap_ms: int = 800  # Gap between JP and CN in sequential mode
 
     # Vocal separation (Demucs)
     separate_vocals: bool = False  # Enable vocal/background separation before mixing
     demucs_model: DemucsModel = DemucsModel.HTDEMUCS  # Demucs model variant
-    demucs_device: str = Field(
-        default="cpu", description="Device for Demucs: 'cpu' or 'cuda'"
-    )
+    demucs_device: str = Field(default="cpu", description="Device for Demucs: 'cpu' or 'cuda'")
     vocals_volume_db: float = -6.0  # Volume for original vocals when separated (dB)
     background_volume_db: float = 0.0  # Volume for background when separated (dB)
 
@@ -151,18 +161,92 @@ class Settings(BaseSettings):
     output_sample_rate: int = 44100
 
     # Paths
-    temp_dir: Path = Field(default=Path("/tmp/kakure"))
+    temp_dir: str = "/tmp/kakure"
 
-    model_config = {
-        "env_prefix": "KAKURE_",
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-        "extra": "ignore",
-    }
+    model_config = {"extra": "ignore"}
 
 
-def get_settings() -> Settings:
-    """Get application settings, creating temp dir if needed."""
-    settings = Settings()
-    settings.temp_dir.mkdir(parents=True, exist_ok=True)
+# ---------------------------------------------------------------------------
+# TOML load / save
+# ---------------------------------------------------------------------------
+
+
+def _settings_to_dict(settings: Settings) -> dict:
+    """Convert Settings to a plain dict suitable for TOML serialization.
+
+    Enums are converted to their string values.
+    Empty strings for optional path fields are kept as-is.
+    """
+    data = {}
+    for name in settings.model_fields:
+        value = getattr(settings, name)
+        if isinstance(value, Enum):
+            value = value.value
+        data[name] = value
+    return data
+
+
+def _dict_to_settings(data: dict) -> Settings:
+    """Create Settings from a plain dict (e.g. loaded from TOML).
+
+    Handles string-to-enum and string-to-Path coercion via Pydantic.
+    """
+    # Filter out keys that aren't in Settings fields
+    valid_keys = set(Settings.model_fields)
+    filtered = {k: v for k, v in data.items() if k in valid_keys}
+    return Settings(**filtered)
+
+
+def load_settings(path: Path | None = None) -> Settings:
+    """Load settings from a TOML config file.
+
+    If the file doesn't exist, returns Settings with built-in defaults.
+    Missing keys in the file fall back to defaults.
+    """
+    path = path or CONFIG_PATH
+    if not path.exists():
+        return Settings()
+    try:
+        with open(path) as f:
+            data = tomlkit.load(f)
+        return _dict_to_settings(data)
+    except Exception:
+        # If config file is malformed, fall back to defaults
+        return Settings()
+
+
+def save_settings(settings: Settings, path: Path | None = None) -> None:
+    """Save settings to a TOML config file.
+
+    Creates the file if it doesn't exist. Preserves comments and formatting
+    in existing files via tomlkit.
+    """
+    path = path or CONFIG_PATH
+
+    # Load existing document to preserve comments, or create new
+    if path.exists():
+        with open(path) as f:
+            doc = tomlkit.load(f)
+    else:
+        doc = tomlkit.document()
+        doc.add(tomlkit.comment("Kakure Configuration"))
+        doc.add(tomlkit.comment("See kakure.toml.example for documentation."))
+
+    # Update values
+    data = _settings_to_dict(settings)
+    for key, value in data.items():
+        doc[key] = value
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        tomlkit.dump(doc, f)
+
+
+def get_settings(path: Path | None = None) -> Settings:
+    """Load settings from config file and ensure temp dir exists.
+
+    This is the primary entry point for getting settings in application code.
+    """
+    settings = load_settings(path)
+    Path(settings.temp_dir).mkdir(parents=True, exist_ok=True)
     return settings

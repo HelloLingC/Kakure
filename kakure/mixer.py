@@ -63,6 +63,8 @@ class AudioMixer:
             return self._mix_sequential(mix_input)
         elif mode == MixMode.WHISPER:
             return self._mix_whisper(mix_input)
+        elif mode == MixMode.SPATIAL:
+            return self._mix_spatial(mix_input)
         else:
             raise ValueError(f"Unknown mix mode: {mode}")
 
@@ -286,6 +288,111 @@ class AudioMixer:
             result = result.overlay(tts_audio, position=position_ms)
 
         logger.info("Whisper mix complete: %dms", len(result))
+        return result
+
+    def _mix_spatial(self, mix_input: MixInput) -> AudioSegment:
+        """Spatial mode: cross-panned stereo for spatial bilingual listening.
+
+        Creates a stereo image where:
+        - Original (Japanese) is stronger on the left: L=100%, R=cross_volume
+        - Chinese TTS is stronger on the right: L=cross_volume, R=100%
+        - Ambience (background) is centered at 100% on both channels
+
+        When vocals are separated, background plays at full volume on both
+        channels as an underlying layer, with vocals cross-panned left.
+        """
+        cross_db = self.settings.spatial_cross_db
+
+        if mix_input.separated is not None:
+            return self._mix_spatial_separated(mix_input, cross_db)
+
+        # --- Without vocal separation ---
+        original = mix_input.original_audio
+
+        # Build Chinese track aligned to segment timing
+        chinese_track = AudioSegment.silent(duration=len(original))
+        for seg in mix_input.segments:
+            tts_audio = self._load_tts_audio(seg["id"], mix_input.tts_results)
+            if tts_audio is None:
+                continue
+
+            position_ms = int(seg["start"] * 1000)
+            segment_duration_ms = int((seg["end"] - seg["start"]) * 1000)
+            if len(tts_audio) > segment_duration_ms:
+                tts_audio = tts_audio[:segment_duration_ms]
+
+            chinese_track = chinese_track.overlay(tts_audio, position=position_ms)
+
+        # Convert to mono for channel construction
+        original_mono = original.set_channels(1)
+        chinese_mono = chinese_track.set_channels(1)
+
+        # Match lengths
+        max_len = max(len(original_mono), len(chinese_mono))
+        original_mono = original_mono + AudioSegment.silent(duration=max_len - len(original_mono))
+        chinese_mono = chinese_mono + AudioSegment.silent(duration=max_len - len(chinese_mono))
+
+        # Build cross-panned stereo:
+        # Left  = original * 100% + chinese * cross%
+        # Right = original * cross% + chinese * 100%
+        original_cross = original_mono + cross_db  # original at cross volume
+        chinese_cross = chinese_mono + cross_db  # chinese at cross volume
+
+        left_channel = original_mono.overlay(chinese_cross)
+        right_channel = original_cross.overlay(chinese_mono)
+
+        result = AudioSegment.from_mono_audiosegments(left_channel, right_channel)
+        logger.info("Spatial mix complete: %dms", len(result))
+        return result
+
+    def _mix_spatial_separated(self, mix_input: MixInput, cross_db: float) -> AudioSegment:
+        """Spatial mode with separated vocals/background.
+
+        Background is centered (100% both channels), vocals cross-panned left,
+        Chinese TTS cross-panned right.
+        """
+        separated = mix_input.separated
+        background = separated.background + self.settings.background_volume_db
+        vocals = separated.vocals + self.settings.vocals_volume_db
+
+        # Build Chinese track aligned to segment timing
+        chinese_track = AudioSegment.silent(duration=len(separated.original))
+        for seg in mix_input.segments:
+            tts_audio = self._load_tts_audio(seg["id"], mix_input.tts_results)
+            if tts_audio is None:
+                continue
+
+            position_ms = int(seg["start"] * 1000)
+            segment_duration_ms = int((seg["end"] - seg["start"]) * 1000)
+            if len(tts_audio) > segment_duration_ms:
+                tts_audio = tts_audio[:segment_duration_ms]
+
+            chinese_track = chinese_track.overlay(tts_audio, position=position_ms)
+
+        # Convert to mono
+        background_mono = background.set_channels(1)
+        vocals_mono = vocals.set_channels(1)
+        chinese_mono = chinese_track.set_channels(1)
+
+        # Match lengths
+        max_len = max(len(background_mono), len(vocals_mono), len(chinese_mono))
+        background_mono = background_mono + AudioSegment.silent(
+            duration=max_len - len(background_mono)
+        )
+        vocals_mono = vocals_mono + AudioSegment.silent(duration=max_len - len(vocals_mono))
+        chinese_mono = chinese_mono + AudioSegment.silent(duration=max_len - len(chinese_mono))
+
+        # Build cross-panned stereo with centered background:
+        # Left  = background + vocals * 100% + chinese * cross%
+        # Right = background + vocals * cross% + chinese * 100%
+        vocals_cross = vocals_mono + cross_db
+        chinese_cross = chinese_mono + cross_db
+
+        left_channel = background_mono.overlay(vocals_mono).overlay(chinese_cross)
+        right_channel = background_mono.overlay(vocals_cross).overlay(chinese_mono)
+
+        result = AudioSegment.from_mono_audiosegments(left_channel, right_channel)
+        logger.info("Spatial mix (separated) complete: %dms", len(result))
         return result
 
     @staticmethod

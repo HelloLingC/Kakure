@@ -95,7 +95,9 @@ class EdgeTTSProcessor(BaseTTSProcessor):
             output_dir = self._temp_dir
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Generating TTS for %d segments using edge-tts voice %s", len(segments), self.voice)
+        logger.info(
+            "Generating TTS for %d segments using edge-tts voice %s", len(segments), self.voice
+        )
         results: list[TTSResult] = []
 
         for seg in segments:
@@ -180,7 +182,7 @@ class IndexTTSProcessor(BaseTTSProcessor):
 
             logger.info("Loading IndexTTS model")
             if self.model_dir:
-                self._model = IndexTTS2(model_dir=str(self.model_dir))
+                self._model = IndexTTS2(model_dir=self.model_dir)
             else:
                 # Auto-download from HuggingFace
                 self._model = IndexTTS2()
@@ -201,10 +203,10 @@ class IndexTTSProcessor(BaseTTSProcessor):
         Returns:
             List of TTSResult with audio paths and durations.
         """
-        if self.reference_audio is None:
+        if not self.reference_audio:
             raise ValueError(
                 "IndexTTS requires a reference audio file for voice cloning. "
-                "Set KAKURE_INDEXTTS_REFERENCE_AUDIO or use --reference-audio."
+                "Upload one in the web UI or set indextts_reference_audio in kakure.toml."
             )
         if not Path(self.reference_audio).exists():
             raise FileNotFoundError(f"Reference audio not found: {self.reference_audio}")
