@@ -181,9 +181,6 @@ def _write_srt(segments: list, path: Path) -> None:
 
 def process_audio(
     audio_path: str | None,
-    mix_mode: str,
-    output_format: str,
-    bitrate: str,
     progress=gr.Progress(),  # noqa: B008
 ):
     """Process audio through the full bilingual pipeline.
@@ -209,11 +206,8 @@ def process_audio(
     current_stage = "asr"
 
     try:
-        # Load saved settings, override per-file options
+        # Load saved settings
         settings = load_settings()
-        settings.mix_mode = MixMode(mix_mode)
-        settings.output_format = output_format
-        settings.output_bitrate = bitrate
 
         if not settings.separate_vocals:
             skipped.add("separate")
@@ -381,13 +375,13 @@ def process_audio(
             [],
         )
 
-        output_path = input_path.parent / f"{input_path.stem}_bilingual.{output_format}"
+        output_path = input_path.parent / f"{input_path.stem}_bilingual.{settings.output_format}"
 
         mixer.export(
             mixed_audio,
             output_path,
-            format=output_format,
-            bitrate=bitrate,
+            format=settings.output_format,
+            bitrate=settings.output_bitrate,
             sample_rate=settings.output_sample_rate,
         )
 
@@ -527,7 +521,8 @@ def save_settings_to_file(
     openai_api_key: str,
     openai_base_url: str,
     openai_model: str,
-    deepl_api_key: str,
+    translation_prompt: str,
+    translation_batch_size: int,
     tts_backend: str,
     chinese_voice: str,
     tts_rate: str,
@@ -571,7 +566,8 @@ def save_settings_to_file(
             openai_api_key=openai_api_key,
             openai_base_url=openai_base_url,
             openai_model=openai_model,
-            deepl_api_key=deepl_api_key,
+            translation_prompt=translation_prompt,
+            translation_batch_size=translation_batch_size,
             tts_backend=TTSBackend(tts_backend),
             chinese_voice=ChineseVoice(chinese_voice),
             tts_rate=tts_rate,
@@ -625,7 +621,8 @@ def _settings_to_form_values(settings: Settings) -> tuple:
         settings.openai_api_key,
         settings.openai_base_url,
         settings.openai_model,
-        settings.deepl_api_key,
+        settings.translation_prompt,
+        settings.translation_batch_size,
         settings.tts_backend.value,
         settings.chinese_voice.value,
         settings.tts_rate,
@@ -674,16 +671,6 @@ def load_settings_to_form() -> tuple:
     """
     settings = load_settings()
     return _settings_to_form_values(settings)
-
-
-def load_process_defaults() -> tuple:
-    """Load process-tab defaults from kakure.toml.
-
-    Returns:
-        Tuple of (mix_mode, output_format, bitrate).
-    """
-    settings = load_settings()
-    return settings.mix_mode.value, settings.output_format, settings.output_bitrate
 
 
 def reset_settings() -> tuple:
@@ -745,24 +732,6 @@ def create_app() -> gr.Blocks:
                     type="filepath",
                     sources=["upload"],
                 )
-
-                with gr.Row():
-                    mix_mode = gr.Dropdown(
-                        choices=mix_modes,
-                        value=defaults.mix_mode.value,
-                        label="Mix Mode",
-                        info="How to combine Japanese and Chinese audio",
-                    )
-                    output_format = gr.Dropdown(
-                        choices=output_formats,
-                        value=defaults.output_format,
-                        label="Output Format",
-                    )
-                    bitrate = gr.Dropdown(
-                        choices=bitrates,
-                        value=defaults.output_bitrate,
-                        label="Bitrate",
-                    )
 
                 gr.Markdown(
                     "*All other settings (ASR, TTS, volumes, etc.) are configured in the "
@@ -895,11 +864,20 @@ def create_app() -> gr.Blocks:
                                 label="OpenAI Model",
                                 placeholder="gpt-4o-mini",
                             )
-                            sett_deepl_api_key = gr.Textbox(
-                                value=defaults.deepl_api_key,
-                                label="DeepL API Key",
-                                type="password",
-                                placeholder="DeepL authentication key",
+                            sett_translation_prompt = gr.Textbox(
+                                value=defaults.translation_prompt,
+                                label="Translation System Prompt",
+                                placeholder="Leave empty for built-in ASMR prompt",
+                                lines=6,
+                                info="Custom OpenAI translator prompt (kakure.toml is gitignored)",
+                            )
+                            sett_translation_batch_size = gr.Slider(
+                                value=defaults.translation_batch_size,
+                                minimum=1,
+                                maximum=50,
+                                step=1,
+                                label="Translation Batch Size",
+                                info="Segments per API call (1 = one request each; 10 = faster)",
                             )
 
                         with gr.Accordion("TTS Settings", open=True):
@@ -1113,7 +1091,7 @@ def create_app() -> gr.Blocks:
         # Process tab: run pipeline
         process_btn.click(
             fn=process_audio,
-            inputs=[audio_input, mix_mode, output_format, bitrate],
+            inputs=[audio_input],
             outputs=[pipeline_html, audio_output, srt_output, process_status, segments_table],
         )
 
@@ -1141,7 +1119,8 @@ def create_app() -> gr.Blocks:
                 sett_openai_api_key,
                 sett_openai_base_url,
                 sett_openai_model,
-                sett_deepl_api_key,
+                sett_translation_prompt,
+                sett_translation_batch_size,
                 sett_tts_backend,
                 sett_chinese_voice,
                 sett_tts_rate,
@@ -1186,7 +1165,8 @@ def create_app() -> gr.Blocks:
                 sett_openai_api_key,
                 sett_openai_base_url,
                 sett_openai_model,
-                sett_deepl_api_key,
+                sett_translation_prompt,
+                sett_translation_batch_size,
                 sett_tts_backend,
                 sett_chinese_voice,
                 sett_tts_rate,
@@ -1229,13 +1209,6 @@ def create_app() -> gr.Blocks:
             ],
         )
 
-        # Load saved settings on page refresh — Process tab
-        app.load(
-            fn=load_process_defaults,
-            inputs=[],
-            outputs=[mix_mode, output_format, bitrate],
-        )
-
         # Load saved settings on page refresh — Settings tab
         app.load(
             fn=load_settings_to_form,
@@ -1254,7 +1227,8 @@ def create_app() -> gr.Blocks:
                 sett_openai_api_key,
                 sett_openai_base_url,
                 sett_openai_model,
-                sett_deepl_api_key,
+                sett_translation_prompt,
+                sett_translation_batch_size,
                 sett_tts_backend,
                 sett_chinese_voice,
                 sett_tts_rate,

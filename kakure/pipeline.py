@@ -10,10 +10,10 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from kakure.asr import Segment, create_asr_processor
-from kakure.config import ASRBackend, MixMode, Settings, TTSBackend, get_settings
+from kakure.config import Settings, get_settings
 from kakure.mixer import AudioMixer, MixInput
 from kakure.separator import SeparatedAudio, VocalSeparator
-from kakure.translator import Translator, TranslatedSegment
+from kakure.translator import TranslatedSegment, Translator
 from kakure.tts import create_tts_processor
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class Pipeline:
         else:
             output_path = Path(output_path)
 
-        console.print(f"\n[bold cyan]Kakure[/] - ASMR Bilingual Voice Overlay")
+        console.print("\n[bold cyan]Kakure[/] - ASMR Bilingual Voice Overlay")
         console.print(f"[dim]Input:  {input_path}[/]")
         console.print(f"[dim]Output: {output_path}[/]")
         console.print(f"[dim]Mode:    {self.settings.mix_mode.value}[/]")

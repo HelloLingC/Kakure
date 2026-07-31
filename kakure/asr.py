@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from kakure.config import ASRBackend, KotobaWhisperModel, Settings, WhisperModelSize
+from kakure.config import ASRBackend, Settings
 
 logger = logging.getLogger(__name__)
 

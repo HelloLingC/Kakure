@@ -5,9 +5,6 @@
 # Required for OpenAI translation backend
 openai_api_key = ""
 
-# Required for DeepL translation backend
-deepl_api_key = ""
-
 # ASR backend: "faster-whisper" or "kotoba-whisper"
 asr_backend = "faster-whisper"
 
@@ -23,13 +20,32 @@ whisper_vad_filter = true
 kotoba_whisper_model = "kotoba-tech/kotoba-whisper-v2.0"
 kotoba_whisper_chunk_length_s = 15
 
-# Translation backend: "openai" or "deepl"
+# Translation backend
 translation_backend = "openai"
 
 # OpenAI settings
 openai_model = "gpt-4o-mini"
 # Optional: custom OpenAI API base URL (for Azure, local proxies, etc.)
 openai_base_url = ""
+
+# Optional: custom translation system prompt (OpenAI backend only).
+# Leave empty to use the built-in ASMR translation prompt.
+# Setting this lets you use an NSFW/custom prompt without uploading it to GitHub
+# (kakure.toml is gitignored).
+translation_prompt = ""
+
+# Batch translation: number of segments translated per OpenAI API call.
+# 1 = legacy per-segment (one request per segment).
+# Higher values (e.g. 10) send multiple segments in one JSON-mode request,
+# reducing round-trips and token overhead. Failed batches auto-fallback to
+# per-segment translation for robustness.
+translation_batch_size = 10
+
+# Approximate per-batch input-token budget (chars * 1.2 estimate).
+# A batch is split early if its cumulative estimate exceeds this, regardless
+# of translation_batch_size. Default 8000 leaves headroom for system prompt +
+# JSON output on gpt-4o-mini's 16k context.
+translation_batch_token_limit = 8000
 
 # TTS backend: "edge-tts" or "indextts"
 tts_backend = "edge-tts"

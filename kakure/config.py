@@ -42,7 +42,6 @@ class TranslationBackend(str, Enum):
     """Translation service backend."""
 
     OPENAI = "openai"
-    DEEPL = "deepl"
 
 
 class WhisperModelSize(str, Enum):
@@ -125,7 +124,12 @@ class Settings(BaseModel):
     openai_api_key: str = ""
     openai_base_url: str = ""
     openai_model: str = "gpt-4o-mini"
-    deepl_api_key: str = ""
+    translation_prompt: str = ""  # Custom system prompt; empty = built-in ASMR prompt
+    # Batch translation: segments per API call. 1 = single-segment mode (legacy)
+    translation_batch_size: int = 10
+    # Approx max input tokens per batch (chars * 1.2 estimate). A batch is
+    # split early when this is exceeded, regardless of translation_batch_size.
+    translation_batch_token_limit: int = 8000
 
     # TTS backend selection
     tts_backend: TTSBackend = TTSBackend.EDGE_TTS

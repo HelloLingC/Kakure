@@ -8,9 +8,29 @@ from pathlib import Path
 
 from pydub import AudioSegment
 
-from kakure.config import DemucsModel, Settings
+from kakure.config import Settings
 
 logger = logging.getLogger(__name__)
+
+
+def _tensor_to_wav(tensor, path, sample_rate):
+    """Save a torch tensor as a 16-bit PCM WAV file using only stdlib."""
+    import wave
+
+    import numpy as np
+
+    wav = tensor.detach().cpu().numpy()
+    if wav.ndim == 1:
+        wav = wav.reshape(1, -1)
+    n_channels = wav.shape[0]
+    wav = np.clip(wav, -1.0, 1.0)
+    wav = (wav * 32767).astype(np.int16)
+    wav = wav.T
+    with wave.open(str(path), "w") as f:
+        f.setnchannels(n_channels)
+        f.setsampwidth(2)
+        f.setframerate(sample_rate)
+        f.writeframes(wav.tobytes())
 
 
 @dataclass
@@ -87,8 +107,6 @@ class VocalSeparator:
                     background_tensor = background_tensor + stem_tensor
 
         # If no background stems, create silence
-        import torch
-        import torchaudio
 
         original_audio = AudioSegment.from_file(str(audio_path))
         sample_rate = self.separator.samplerate
@@ -98,15 +116,13 @@ class VocalSeparator:
 
         temp_dir = Path(tempfile.mkdtemp(prefix="kakure_demucs_"))
 
-        # Save vocals
         vocals_path = temp_dir / "vocals.wav"
-        demucs.api.save_audio(vocals_tensor, str(vocals_path), samplerate=sample_rate)
+        _tensor_to_wav(vocals_tensor, vocals_path, sample_rate)
         vocals = AudioSegment.from_wav(str(vocals_path))
 
-        # Save background
         if background_tensor is not None:
             background_path = temp_dir / "background.wav"
-            demucs.api.save_audio(background_tensor, str(background_path), samplerate=sample_rate)
+            _tensor_to_wav(background_tensor, background_path, sample_rate)
             background = AudioSegment.from_wav(str(background_path))
         else:
             # No background stems — create silence matching original length
@@ -114,9 +130,15 @@ class VocalSeparator:
 
         # Match lengths (Demucs may produce slightly different lengths)
         max_len = max(len(original_audio), len(vocals), len(background))
-        original_audio = original_audio + AudioSegment.silent(duration=max(0, max_len - len(original_audio)))
-        vocals = vocals + AudioSegment.silent(duration=max(0, max_len - len(vocals)))
-        background = background + AudioSegment.silent(duration=max(0, max_len - len(background)))
+        original_audio = original_audio + AudioSegment.silent(
+            duration=max(0, max_len - len(original_audio))
+        )
+        vocals = vocals + AudioSegment.silent(
+            duration=max(0, max_len - len(vocals))
+        )
+        background = background + AudioSegment.silent(
+            duration=max(0, max_len - len(background))
+        )
 
         logger.info(
             "Vocal separation complete: original=%dms, vocals=%dms, background=%dms",
