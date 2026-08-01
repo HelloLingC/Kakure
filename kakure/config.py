@@ -211,7 +211,7 @@ def load_settings(path: Path | None = None) -> Settings:
     if not path.exists():
         return Settings()
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = tomlkit.load(f)
         return _dict_to_settings(data)
     except Exception:
@@ -229,7 +229,7 @@ def save_settings(settings: Settings, path: Path | None = None) -> None:
 
     # Load existing document to preserve comments, or create new
     if path.exists():
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             doc = tomlkit.load(f)
     else:
         doc = tomlkit.document()
@@ -242,7 +242,7 @@ def save_settings(settings: Settings, path: Path | None = None) -> None:
         doc[key] = value
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         tomlkit.dump(doc, f)
 
 

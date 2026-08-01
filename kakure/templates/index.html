@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kakure - ASMR Bilingual Voice Overlay</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.14.9"></script>
+<style>
+  @keyframes kakure-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.08); }
+  }
+  .stage-running { animation: kakure-pulse 2s ease-in-out infinite; }
+  [x-cloak] { display: none !important; }
+  .file-drop-zone.dragover { border-color: #3b82f6; background: #eff6ff; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans antialiased" x-data="{ activeTab: 'process' }" x-cloak>
+
+<div class="max-w-6xl mx-auto px-4 py-6">
+
+  <!-- Header -->
+  <header class="mb-6">
+    <h1 class="text-3xl font-bold text-gray-800">Kakure</h1>
+    <p class="text-gray-500 mt-1">ASMR Japanese-to-Chinese bilingual voice overlay tool</p>
+  </header>
+
+  <!-- Tab Nav -->
+  <nav class="flex gap-0 mb-6 border-b border-gray-200">
+    <button @click="activeTab = 'process'"
+      :class="activeTab === 'process' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer">Process</button>
+    <button @click="activeTab = 'transcribe'"
+      :class="activeTab === 'transcribe' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer">Transcribe</button>
+    <button @click="activeTab = 'settings'"
+      :class="activeTab === 'settings' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer">Settings</button>
+  </nav>
+
+  <!-- ================================================================ -->
+  <!-- PROCESS TAB                                                        -->
+  <!-- ================================================================ -->
+  <div x-show="activeTab === 'process'" x-data="processTab()" x-cloak>
+
+    <form @submit.prevent="start" enctype="multipart/form-data"
+          class="mb-6 p-6 bg-white rounded-lg border border-gray-200 shadow-sm">
+      <label class="block text-sm font-medium text-gray-700 mb-2">Upload Japanese Audio</label>
+      <div class="flex items-center gap-3">
+        <input type="file" name="file" accept="audio/*" required
+               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4
+                      file:rounded-md file:border-0 file:text-sm file:font-medium
+                      file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100
+                      cursor-pointer" :disabled="uploading">
+        <button type="submit"
+                class="shrink-0 px-6 py-2 bg-blue-600 text-white rounded-md text-sm font-medium
+                       hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
+                       transition-colors cursor-pointer"
+                :disabled="uploading">
+          <span x-show="!uploading">Process</span>
+          <span x-show="uploading" class="inline-flex items-center gap-1">
+            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            Uploading...
+          </span>
+        </button>
+      </div>
+    </form>
+
+    <p class="text-xs text-gray-400 mb-4">All settings (ASR model, TTS voice, mix mode, etc.) are configured in the Settings tab.</p>
+
+    <!-- Pipeline flow diagram -->
+    <div class="mb-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+      <div class="flex items-center gap-2 flex-wrap">
+        <template x-for="(stage, i) in stages" :key="stage.id">
+          <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg border-2 min-w-[110px] transition-all duration-300"
+                 :class="{
+                   'border-gray-200 bg-gray-50': stage.status === 'pending',
+                   'border-blue-500 bg-blue-50 stage-running': stage.status === 'running',
+                   'border-green-500 bg-green-50': stage.status === 'completed',
+                   'border-gray-200 bg-gray-50 border-dashed': stage.status === 'skipped',
+                   'border-red-500 bg-red-50': stage.status === 'error',
+                 }">
+              <span class="text-lg leading-none" x-text="stage.icon"></span>
+              <div>
+                <div class="font-semibold text-xs"
+                     :class="{
+                       'text-gray-500': stage.status === 'pending',
+                       'text-blue-700': stage.status === 'running',
+                       'text-green-700': stage.status === 'completed',
+                       'text-gray-400': stage.status === 'skipped',
+                       'text-red-700': stage.status === 'error',
+                     }" x-text="stage.name"></div>
+                <div class="text-[11px]"
+                     :class="{
+                       'text-gray-400': stage.status === 'pending',
+                       'text-blue-500': stage.status === 'running',
+                       'text-green-600': stage.status === 'completed',
+                       'text-gray-300': stage.status === 'skipped',
+                       'text-red-500': stage.status === 'error',
+                     }" x-text="stageDesc(stage)"></div>
+              </div>
+            </div>
+            <span x-show="i < stages.length - 1" class="text-gray-300 text-xl font-light">›</span>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Status / Error -->
+    <div x-show="statusMessage && !error" class="mb-4 p-3 bg-blue-50 text-blue-700 rounded-md text-sm"
+         x-text="statusMessage"></div>
+    <div x-show="error" class="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm" x-text="error"></div>
+
+    <!-- Results -->
+    <div x-show="completed" class="space-y-4" x-transition>
+      <div class="p-4 bg-green-50 rounded-md border border-green-200">
+        <p class="text-sm text-green-700">
+          Done! Duration: <span x-text="result.duration.toFixed(1)"></span>s |
+          Segments: <span x-text="result.segments_count ?? result.segments?.length"></span>
+          <span x-show="result.vocals_separated"> | Vocals separated</span>
+        </p>
+      </div>
+      <div class="flex gap-3">
+        <a :href="'/api/process/' + jobId + '/result'"
+           class="inline-flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition-colors no-underline">
+          Download Audio
+        </a>
+        <a :href="'/api/process/' + jobId + '/srt'"
+           class="inline-flex items-center gap-1 px-4 py-2 bg-gray-600 text-white rounded-md text-sm font-medium hover:bg-gray-700 transition-colors no-underline">
+          Download SRT
+        </a>
+      </div>
+
+      <!-- Segments table -->
+      <div class="overflow-x-auto bg-white rounded-lg border border-gray-200 shadow-sm" x-show="segments.length">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Start</th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">End</th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Japanese</th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Chinese</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <template x-for="seg in segments" :key="seg.id">
+              <tr class="hover:bg-gray-50">
+                <td class="px-3 py-2 text-gray-600" x-text="seg.id"></td>
+                <td class="px-3 py-2 text-gray-600" x-text="seg.start.toFixed(2)"></td>
+                <td class="px-3 py-2 text-gray-600" x-text="seg.end.toFixed(2)"></td>
+                <td class="px-3 py-2 text-gray-800 max-w-md" x-text="seg.original_text"></td>
+                <td class="px-3 py-2 text-gray-800 max-w-md" x-text="seg.translated_text"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- TRANSCRIBE TAB                                                    -->
+  <!-- ================================================================ -->
+  <div x-show="activeTab === 'transcribe'" x-data="transcribeTab()" x-cloak>
+
+    <form @submit.prevent="start" enctype="multipart/form-data"
+          class="mb-6 p-6 bg-white rounded-lg border border-gray-200 shadow-sm">
+      <label class="block text-sm font-medium text-gray-700 mb-2">Upload Audio for Transcription</label>
+      <div class="flex items-center gap-3">
+        <input type="file" name="file" accept="audio/*" required
+               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4
+                      file:rounded-md file:border-0 file:text-sm file:font-medium
+                      file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100
+                      cursor-pointer" :disabled="uploading">
+        <button type="submit"
+                class="shrink-0 px-6 py-2 bg-blue-600 text-white rounded-md text-sm font-medium
+                       hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
+                       transition-colors cursor-pointer"
+                :disabled="uploading">
+          <span x-show="!uploading">Transcribe</span>
+          <span x-show="uploading" class="inline-flex items-center gap-1">
+            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            Uploading...
+          </span>
+        </button>
+      </div>
+    </form>
+
+    <p class="text-xs text-gray-400 mb-4">ASR settings are configured in the Settings tab.</p>
+
+    <!-- Pipeline flow diagram -->
+    <div class="mb-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+      <div class="flex items-center gap-2 flex-wrap">
+        <template x-for="(stage, i) in stages" :key="stage.id">
+          <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg border-2 min-w-[110px] transition-all duration-300"
+                 :class="{
+                   'border-gray-200 bg-gray-50': stage.status === 'pending',
+                   'border-blue-500 bg-blue-50 stage-running': stage.status === 'running',
+                   'border-green-500 bg-green-50': stage.status === 'completed',
+                   'border-red-500 bg-red-50': stage.status === 'error',
+                 }">
+              <span class="text-lg leading-none" x-text="stage.icon"></span>
+              <div>
+                <div class="font-semibold text-xs"
+                     :class="{
+                       'text-gray-500': stage.status === 'pending',
+                       'text-blue-700': stage.status === 'running',
+                       'text-green-700': stage.status === 'completed',
+                       'text-red-700': stage.status === 'error',
+                     }" x-text="stage.name"></div>
+                <div class="text-[11px]"
+                     :class="{
+                       'text-gray-400': stage.status === 'pending',
+                       'text-blue-500': stage.status === 'running',
+                       'text-green-600': stage.status === 'completed',
+                       'text-red-500': stage.status === 'error',
+                     }" x-text="stageDesc(stage)"></div>
+              </div>
+            </div>
+            <span x-show="i < stages.length - 1" class="text-gray-300 text-xl font-light">›</span>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Info / Error -->
+    <div x-show="infoText && !error" class="mb-4 p-3 bg-blue-50 text-blue-700 rounded-md text-sm"
+         x-text="infoText"></div>
+    <div x-show="error" class="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm" x-text="error"></div>
+
+    <!-- Transcription table -->
+    <div x-show="segments.length" class="overflow-x-auto bg-white rounded-lg border border-gray-200 shadow-sm" x-transition>
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Start (s)</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">End (s)</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Text</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <template x-for="seg in segments" :key="seg.id">
+            <tr class="hover:bg-gray-50">
+              <td class="px-3 py-2 text-gray-600" x-text="seg.id"></td>
+              <td class="px-3 py-2 text-gray-600" x-text="seg.start?.toFixed(2)"></td>
+              <td class="px-3 py-2 text-gray-600" x-text="seg.end?.toFixed(2)"></td>
+              <td class="px-3 py-2 text-gray-800 max-w-xl" x-text="seg.text"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- SETTINGS TAB                                                      -->
+  <!-- ================================================================ -->
+  <div x-show="activeTab === 'settings'" x-data="settingsTab()" x-cloak>
+
+    <div class="grid grid-cols-2 gap-6">
+
+      <!-- Left Column -->
+      <div class="space-y-4">
+
+        <!-- ASR Settings -->
+        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <button @click="asrOpen = !asrOpen" type="button"
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700">ASR Settings</span>
+            <svg :class="asrOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div x-show="asrOpen" class="px-4 py-3 space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">ASR Backend</label>
+              <select x-model="s.asr_backend" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                {% for b in asr_backends %}<option value="{{ b.value }}">{{ b.label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Device</label>
+              <select x-model="s.whisper_device" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                <option value="cpu">cpu</option><option value="cuda">cuda</option>
+              </select>
+            </div>
+            <!-- faster-whisper fields -->
+            <template x-if="s.asr_backend === 'faster-whisper'">
+              <div class="space-y-3">
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 mb-1">Whisper Model</label>
+                  <select x-model="s.whisper_model" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                    {% for m in whisper_models %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 mb-1">Compute Type</label>
+                  <input x-model="s.whisper_compute_type" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="int8">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 mb-1">Language</label>
+                  <input x-model="s.whisper_language" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="ja">
+                </div>
+                <div class="flex gap-4">
+                  <div class="flex-1">
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Beam Size</label>
+                    <input x-model.number="s.whisper_beam_size" type="number" min="1" max="20" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                  </div>
+                  <div class="flex items-end pb-1">
+                    <label class="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input x-model="s.whisper_vad_filter" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                      VAD Filter
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <!-- kotoba-whisper fields -->
+            <template x-if="s.asr_backend === 'kotoba-whisper'">
+              <div class="space-y-3">
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 mb-1">Kotoba-Whisper Model</label>
+                  <select x-model="s.kotoba_whisper_model" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                    {% for m in kotoba_models %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 mb-1">Chunk Length (s)</label>
+                  <input x-model.number="s.kotoba_whisper_chunk_length_s" type="number" min="5" max="60" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                </div>
+              </div>
+            </template>
+          </div>
+        </section>
+
+        <!-- Translation Settings -->
+        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <button @click="transOpen = !transOpen" type="button"
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700">Translation Settings</span>
+            <svg :class="transOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div x-show="transOpen" class="px-4 py-3 space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Translation Backend</label>
+              <select x-model="s.translation_backend" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                {% for b in translation_backends %}<option value="{{ b.value }}">{{ b.label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">OpenAI API Key</label>
+              <input x-model="s.openai_api_key" type="password" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="sk-...">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">OpenAI Base URL</label>
+              <input x-model="s.openai_base_url" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="https://api.openai.com/v1">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">OpenAI Model</label>
+              <input x-model="s.openai_model" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="gpt-4o-mini">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Translation System Prompt</label>
+              <textarea x-model="s.translation_prompt" rows="4" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="Leave empty for built-in ASMR prompt"></textarea>
+              <p class="text-[11px] text-gray-400 mt-0.5">Custom OpenAI translator prompt (stored in kakure.toml)</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Translation Batch Size</label>
+              <div class="flex items-center gap-2">
+                <input x-model.number="s.translation_batch_size" type="range" min="1" max="50" class="flex-1">
+                <span class="text-xs text-gray-500 w-8 text-right" x-text="s.translation_batch_size"></span>
+              </div>
+              <p class="text-[11px] text-gray-400 mt-0.5">Segments per API call (1 = one request each)</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- TTS Settings -->
+        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <button @click="ttsOpen = !ttsOpen" type="button"
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700">TTS Settings</span>
+            <svg :class="ttsOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div x-show="ttsOpen" class="px-4 py-3 space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">TTS Backend</label>
+              <select x-model="s.tts_backend" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                {% for b in tts_backends %}<option value="{{ b.value }}">{{ b.label }}</option>{% endfor %}
+              </select>
+            </div>
+            <!-- edge-tts fields -->
+            <template x-if="s.tts_backend === 'edge-tts'">
+              <div class="space-y-3">
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 mb-1">Chinese Voice</label>
+                  <select x-model="s.chinese_voice" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                    {% for v in chinese_voices %}<option value="{{ v.value }}">{{ v.label }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Rate</label>
+                    <input x-model="s.tts_rate" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="+0%">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Volume</label>
+                    <input x-model="s.tts_volume" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="+0%">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Pitch</label>
+                    <input x-model="s.tts_pitch" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="+0Hz">
+                  </div>
+                </div>
+              </div>
+            </template>
+            <!-- indextts fields -->
+            <template x-if="s.tts_backend === 'indextts'">
+              <div class="space-y-3">
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 mb-1">Reference Audio</label>
+                  <input x-model="s.indextts_reference_audio" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="Path to reference audio file">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 mb-1">Model Directory</label>
+                  <input x-model="s.indextts_model_dir" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="Leave empty for auto-download">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 mb-1">Language</label>
+                  <input x-model="s.indextts_language" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="zh">
+                </div>
+              </div>
+            </template>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Right Column -->
+      <div class="space-y-4">
+
+        <!-- Mixing Settings -->
+        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <button @click="mixOpen = !mixOpen" type="button"
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700">Mixing Settings</span>
+            <svg :class="mixOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div x-show="mixOpen" class="px-4 py-3 space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Mix Mode</label>
+              <select x-model="s.mix_mode" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                {% for m in mix_modes %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
+              </select>
+              <p class="text-[11px] text-gray-400 mt-1" x-text="mixModeDesc(s.mix_mode)"></p>
+            </div>
+            <div class="space-y-2">
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Overlay Volume: <span x-text="s.overlay_volume_db"></span> dB</label>
+                <input x-model.number="s.overlay_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Whisper Volume: <span x-text="s.whisper_volume_db"></span> dB</label>
+                <input x-model.number="s.whisper_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Spatial Cross: <span x-text="s.spatial_cross_db"></span> dB</label>
+                <input x-model.number="s.spatial_cross_db" type="range" min="-30" max="0" step="0.5" class="w-full">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Sequential Gap (ms)</label>
+                <input x-model.number="s.sequential_gap_ms" type="number" min="0" max="5000" step="100" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Vocal Separation -->
+        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <button @click="sepOpen = !sepOpen" type="button"
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700">Vocal Separation</span>
+            <svg :class="sepOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div x-show="sepOpen" class="px-4 py-3 space-y-3">
+            <label class="flex items-center gap-2 text-sm cursor-pointer">
+              <input x-model="s.separate_vocals" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+              <span class="text-gray-700">Separate Vocals (Demucs)</span>
+            </label>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Demucs Model</label>
+              <select x-model="s.demucs_model" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                {% for m in demucs_models %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Demucs Device</label>
+              <select x-model="s.demucs_device" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                <option value="cpu">cpu</option><option value="cuda">cuda</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Vocals Volume: <span x-text="s.vocals_volume_db"></span> dB</label>
+              <input x-model.number="s.vocals_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Background Volume: <span x-text="s.background_volume_db"></span> dB</label>
+              <input x-model.number="s.background_volume_db" type="range" min="-30" max="10" step="0.5" class="w-full">
+            </div>
+          </div>
+        </section>
+
+        <!-- Output Settings -->
+        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <button @click="outOpen = !outOpen" type="button"
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700">Output Settings</span>
+            <svg :class="outOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div x-show="outOpen" class="px-4 py-3 space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Output Format</label>
+              <select x-model="s.output_format" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                {% for f in output_formats %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Output Bitrate</label>
+              <select x-model="s.output_bitrate" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                {% for b in bitrates %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Sample Rate</label>
+              <input x-model.number="s.output_sample_rate" type="number" min="8000" max="192000" step="1000" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+            </div>
+          </div>
+        </section>
+
+        <!-- Paths -->
+        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <button @click="pathOpen = !pathOpen" type="button"
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700">Paths</span>
+            <svg :class="pathOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div x-show="pathOpen" class="px-4 py-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Temp Directory</label>
+              <input x-model="s.temp_dir" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="/tmp/kakure">
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+    <!-- Save / Reset -->
+    <div class="flex items-center gap-3 mt-6">
+      <button @click="save" type="button"
+              class="px-6 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700
+                     disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              :disabled="saving">
+        <span x-show="!saving">Save Settings</span>
+        <span x-show="saving" class="inline-flex items-center gap-1">
+          <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+          Saving...
+        </span>
+      </button>
+      <button @click="reset" type="button"
+              class="px-6 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium
+                     hover:bg-gray-50 transition-colors cursor-pointer">Reset to Defaults</button>
+      <span class="text-sm" :class="saveStatus.includes('Error') ? 'text-red-600' : 'text-green-600'"
+            x-text="saveStatus"></span>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- ================================================================ -->
+<!-- Alpine.js Components                                              -->
+<!-- ================================================================ -->
+<script>
+function processTab() {
+  return {
+    jobId: null,
+    stages: {{ pipeline_stages_json | safe }}.map(s => ({...s, status: 'pending'})),
+    statusMessage: '',
+    error: null,
+    completed: false,
+    result: null,
+    segments: [],
+    uploading: false,
+    _stageOrder: null,
+    _es: null,
+
+    init() {
+      this._stageOrder = this.stages.map(s => s.id);
+    },
+
+    stageDesc(stage) { return stage.desc + (stage.status === 'completed' ? ' ✓' : stage.status === 'running' ? '...' : stage.status === 'error' ? ' ✗' : ''); },
+
+    async start(event) {
+      this.uploading = true; this.error = null; this.completed = false;
+      this.result = null; this.segments = [];
+      this.stages = this.stages.map(s => ({...s, status: 'pending'}));
+      this.statusMessage = '';
+      const formData = new FormData(event.target);
+      try {
+        const res = await fetch('/api/process', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed');
+        const { job_id } = await res.json();
+        this.jobId = job_id;
+      } catch (e) { this.error = e.message; this.uploading = false; return; }
+      this.uploading = false;
+      this.connectSSE();
+    },
+
+    connectSSE() {
+      if (this._es) this._es.close();
+      const es = new EventSource('/api/process/' + this.jobId);
+      this._es = es;
+      es.onmessage = (e) => {
+        const d = JSON.parse(e.data);
+        if (d.type === 'heartbeat') return;
+        if (d.type === 'progress') {
+          this.stages = this.stages.map(s => {
+            if (s.id === d.stage) return {...s, status: d.status, message: d.message || ''};
+            if (d.status === 'completed' && this._stageOrder.indexOf(s.id) < this._stageOrder.indexOf(d.stage)) return {...s, status: 'completed'};
+            return s;
+          });
+          if (d.message) this.statusMessage = d.message;
+        }
+        if (d.type === 'finished') { this.completed = true; this.result = d; this.segments = d.segments || []; this.statusMessage = ''; es.close(); }
+        if (d.type === 'error') {
+          this.error = d.message;
+          this.stages = this.stages.map(s => s.id === d.stage ? {...s, status: 'error'} : s);
+          es.close();
+        }
+      };
+      es.onerror = () => { if (!this.completed && !this.error) this.error = 'Connection lost'; es.close(); };
+    }
+  };
+}
+
+function transcribeTab() {
+  return {
+    jobId: null,
+    stages: {{ transcribe_stages_json | safe }}.map(s => ({...s, status: 'pending'})),
+    infoText: '',
+    error: null,
+    segments: [],
+    uploading: false,
+    _stageOrder: null,
+    _es: null,
+
+    init() { this._stageOrder = this.stages.map(s => s.id); },
+
+    stageDesc(stage) { return stage.desc + (stage.status === 'completed' ? ' ✓' : stage.status === 'running' ? '...' : stage.status === 'error' ? ' ✗' : ''); },
+
+    async start(event) {
+      this.uploading = true; this.error = null; this.segments = [];
+      this.stages = this.stages.map(s => ({...s, status: 'pending'}));
+      this.infoText = '';
+      const formData = new FormData(event.target);
+      try {
+        const res = await fetch('/api/transcribe', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed');
+        const { job_id } = await res.json();
+        this.jobId = job_id;
+      } catch (e) { this.error = e.message; this.uploading = false; return; }
+      this.uploading = false;
+      this.connectSSE();
+    },
+
+    connectSSE() {
+      if (this._es) this._es.close();
+      const es = new EventSource('/api/transcribe/' + this.jobId);
+      this._es = es;
+      es.onmessage = (e) => {
+        const d = JSON.parse(e.data);
+        if (d.type === 'heartbeat') return;
+        if (d.type === 'progress') {
+          this.stages = this.stages.map(s => {
+            if (s.id === d.stage) return {...s, status: d.status};
+            if (d.status === 'completed' && this._stageOrder.indexOf(s.id) < this._stageOrder.indexOf(d.stage)) return {...s, status: 'completed'};
+            return s;
+          });
+        }
+        if (d.type === 'finished') {
+          this.segments = d.segments || [];
+          this.infoText = `Language: ${d.language} (${(d.language_probability * 100).toFixed(0)}% confidence) | Duration: ${d.duration?.toFixed(1)}s | Segments: ${d.segments?.length || 0}`;
+          es.close();
+        }
+        if (d.type === 'error') { this.error = d.message; es.close(); }
+      };
+      es.onerror = () => { if (!this.error) this.error = 'Connection lost'; es.close(); };
+    }
+  };
+}
+
+function settingsTab() {
+  return {
+    s: {{ settings_json | safe }},
+    asrOpen: true, transOpen: false, ttsOpen: false,
+    mixOpen: true, sepOpen: false, outOpen: false, pathOpen: false,
+    saving: false, saveStatus: '',
+    mixModeDesc(v) { return {{ mix_mode_descriptions_json | safe }}[v] || ''; },
+
+    async save() {
+      this.saving = true; this.saveStatus = '';
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(this.s)
+        });
+        if (res.ok) {
+          this.saveStatus = '✓ Settings saved to kakure.toml';
+        } else {
+          const err = await res.json();
+          this.saveStatus = 'Error: ' + (err.detail || 'Save failed');
+        }
+      } catch (e) { this.saveStatus = 'Error: ' + e.message; }
+      this.saving = false;
+    },
+
+    async reset() {
+      try {
+        const res = await fetch('/api/settings/reset', { method: 'POST' });
+        const data = await res.json();
+        this.s = data.settings;
+        this.saveStatus = '✓ Settings reset to defaults';
+      } catch (e) { this.saveStatus = 'Error: ' + e.message; }
+    }
+  };
+}
+</script>
+
+</body>
+</html>

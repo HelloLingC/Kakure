@@ -30,9 +30,9 @@ Requires **ffmpeg** on PATH (pydub dependency for non-WAV formats).
 kakure
 
 # With options
-kakure --share              # create a public share link
-kakure --server-port 8080   # custom port
-kakure --server-name 127.0.0.1  # bind to localhost only
+kakure --port 8080          # custom port
+kakure --host 127.0.0.1     # bind to localhost only
+kakure --reload             # auto-reload on code changes (development)
 ```
 
 The web UI has three tabs:
@@ -68,7 +68,10 @@ Single-package layout: `kakure/` with these modules:
 | `separator.py` | `VocalSeparator` — uses Demucs to split audio into vocals and background. Returns `SeparatedAudio` dataclass. Lazy-loads model on first use |
 | `mixer.py` | `AudioMixer` — 5 modes: `dual` (stereo L=JP/R=CN), `overlay` (CN at -6dB with ducking), `sequential` (JP→gap→CN), `whisper` (CN at -15dB, no ducking), `spatial` (cross-panned stereo). When `separated` is provided in `MixInput`, uses background + reduced vocals as base instead of original |
 | `pipeline.py` | `Pipeline` — orchestrates ASR→Translation→TTS→(Separation)→Mixing→Export. Uses factories to select backends |
-| `webui.py` | Gradio web UI with Process, Transcribe, and Settings tabs. Factory: `create_app()`, launcher: `launch_webui()`, CLI entry point: `main()` |
+| `api.py` | FastAPI application — REST endpoints (`/api/process`, `/api/transcribe`, `/api/settings`), SSE progress streaming, background job store |
+| `routes.py` | Web UI routes — serves the SPA (`GET /`) with Jinja2 templates, passes enum options and settings as context |
+| `cli.py` | CLI entry point (`kakure` command) — launches uvicorn with configurable host/port/reload |
+| `templates/index.html` | Single-page web UI — HTMX+Alpine.js with Process, Transcribe, and Settings tabs. Tailwind CSS via CDN. Alpine handles SSE progress streaming, file uploads, form state, and conditional field visibility |
 
 Data flow: `Segment` (asr) → `TranslatedSegment` (translator) → `dict` segments + `TTSResult` dicts (tts) → `MixInput` (mixer, optionally with `SeparatedAudio`) → `AudioSegment` → exported file.
 

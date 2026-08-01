@@ -324,7 +324,7 @@ class Translator:
             try:
                 translated = self.backend.translate(seg.original_text, context=context)
                 seg.translated_text = translated
-                context_parts.append(f"JP: {seg.original_text}\nCN: {translated}")
+                context_parts.append(f"{translated}")
                 logger.debug("Segment %d: %s -> %s", seg.id, seg.original_text, translated)
             except Exception as e:
                 logger.error("Failed to translate segment %d: %s", seg.id, e)
