@@ -5,6 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kakure - ASMR Bilingual Voice Overlay</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="/static/i18n.js"></script>
+<script>
+document.addEventListener('alpine:init', () => {
+  Alpine.store('i18n', {
+    lang: localStorage.getItem('kakure.lang') || 'en',
+    t(key, vars) {
+      let s = (I18N_STRINGS[this.lang] || I18N_STRINGS.en)[key];
+      if (s === undefined) s = key;
+      if (vars) {
+        for (const [k, v] of Object.entries(vars)) s = s.split('{' + k + '}').join(String(v));
+      }
+      return s;
+    },
+    toggle() {
+      this.lang = this.lang === 'en' ? 'zh' : 'en';
+      localStorage.setItem('kakure.lang', this.lang);
+      document.documentElement.lang = this.lang;
+    },
+    init() { document.documentElement.lang = this.lang; }
+  });
+});
+</script>
 <script defer src="https://unpkg.com/alpinejs@3.14.9"></script>
 <style>
   @keyframes kakure-pulse {
@@ -24,33 +46,42 @@
 <div class="max-w-6xl mx-auto px-4 py-6">
 
   <!-- Header -->
-  <header class="mb-6">
-    <h1 class="text-3xl font-bold text-gray-800">Kakure</h1>
-    <p class="text-gray-500 mt-1">ASMR Japanese-to-Chinese bilingual voice overlay tool</p>
+  <header class="mb-6 flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-bold text-gray-800">Kakure</h1>
+      <p class="text-gray-500 mt-1" x-text="$store.i18n.t('app.subtitle')"></p>
+    </div>
+    <button type="button" @click="$store.i18n.toggle()"
+            class="shrink-0 px-3 py-1.5 rounded-full border border-gray-300 bg-white text-sm text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
+            x-text="$store.i18n.t('lang.toggle')"></button>
   </header>
 
   <!-- ffmpeg warning banner -->
   <div x-show="ffmpegOk === false" x-cloak
        class="mb-6 p-3 bg-amber-50 text-amber-800 rounded-md border border-amber-200 text-sm">
-    <span class="font-medium">ffmpeg not detected.</span>
-    Kakure needs ffmpeg to process audio. Install it from
-    <a class="underline font-medium" href="https://ffmpeg.org/download.html" target="_blank" rel="noopener">ffmpeg.org</a>,
-    make sure it's on your PATH, then restart Kakure.
+    <span class="font-medium" x-text="$store.i18n.t('ffmpeg.title')"></span>
+    <span x-text="$store.i18n.t('ffmpeg.warn1')"></span>
+    <a class="underline font-medium" href="https://ffmpeg.org/download.html" target="_blank" rel="noopener">ffmpeg.org</a>
+    <span x-text="$store.i18n.t('ffmpeg.warn2')"></span>
     <button type="button" @click="ffmpegOk = true"
-            class="ml-2 text-amber-700 hover:text-amber-900 underline cursor-pointer">Dismiss</button>
+            class="ml-2 text-amber-700 hover:text-amber-900 underline cursor-pointer"
+            x-text="$store.i18n.t('ffmpeg.dismiss')"></button>
   </div>
 
   <!-- Tab Nav -->
   <nav class="flex gap-0 mb-6 border-b border-gray-200">
     <button @click="activeTab = 'process'"
       :class="activeTab === 'process' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
-      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer">Process</button>
+      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer"
+      x-text="$store.i18n.t('tab.process')"></button>
     <button @click="activeTab = 'transcribe'"
       :class="activeTab === 'transcribe' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
-      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer">Transcribe</button>
+      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer"
+      x-text="$store.i18n.t('tab.transcribe')"></button>
     <button @click="activeTab = 'settings'"
       :class="activeTab === 'settings' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
-      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer">Settings</button>
+      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer"
+      x-text="$store.i18n.t('tab.settings')"></button>
   </nav>
 
   <!-- ================================================================ -->
@@ -60,7 +91,7 @@
 
     <form @submit.prevent="start" enctype="multipart/form-data"
           class="mb-6 p-6 bg-white rounded-lg border border-gray-200 shadow-sm">
-      <label class="block text-sm font-medium text-gray-700 mb-2">Upload Japanese Audio</label>
+      <label class="block text-sm font-medium text-gray-700 mb-2" x-text="$store.i18n.t('process.upload_label')"></label>
       <div class="flex items-center gap-3">
         <input type="file" name="file" accept="audio/*" required
                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4
@@ -72,16 +103,16 @@
                        hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
                        transition-colors cursor-pointer"
                 :disabled="uploading">
-          <span x-show="!uploading">Process</span>
+          <span x-show="!uploading" x-text="$store.i18n.t('process.button')"></span>
           <span x-show="uploading" class="inline-flex items-center gap-1">
             <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            Uploading...
+            <span x-text="$store.i18n.t('process.uploading')"></span>
           </span>
         </button>
       </div>
     </form>
 
-    <p class="text-xs text-gray-400 mb-4">All settings (ASR model, TTS voice, mix mode, etc.) are configured in the Settings tab.</p>
+    <p class="text-xs text-gray-400 mb-4" x-text="$store.i18n.t('process.hint')"></p>
 
     <!-- Pipeline flow diagram -->
     <div class="mb-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
@@ -105,7 +136,7 @@
                        'text-green-700': stage.status === 'completed',
                        'text-gray-400': stage.status === 'skipped',
                        'text-red-700': stage.status === 'error',
-                     }" x-text="stage.name"></div>
+                     }" x-text="stageName(stage)"></div>
                 <div class="text-[11px]"
                      :class="{
                        'text-gray-400': stage.status === 'pending',
@@ -131,20 +162,19 @@
     <div x-show="completed" class="space-y-4" x-transition>
       <div class="p-4 bg-green-50 rounded-md border border-green-200">
         <p class="text-sm text-green-700">
-          Done! Duration: <span x-text="result.duration.toFixed(1)"></span>s |
-          Segments: <span x-text="result.segments_count ?? result.segments?.length"></span>
-          <span x-show="result.vocals_separated"> | Vocals separated</span>
+          <span x-text="$store.i18n.t('process.done')"></span>
+          <span x-text="$store.i18n.t('process.duration')"></span>: <span x-text="result.duration.toFixed(1)"></span>s |
+          <span x-text="$store.i18n.t('process.segments')"></span>: <span x-text="result.segments_count ?? result.segments?.length"></span>
+          <span x-show="result.vocals_separated"> | <span x-text="$store.i18n.t('process.vocals_separated')"></span></span>
         </p>
       </div>
       <div class="flex gap-3">
         <a :href="'/api/process/' + jobId + '/result'"
-           class="inline-flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition-colors no-underline">
-          Download Audio
-        </a>
+           class="inline-flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition-colors no-underline"
+           x-text="$store.i18n.t('process.download_audio')"></a>
         <a :href="'/api/process/' + jobId + '/srt'"
-           class="inline-flex items-center gap-1 px-4 py-2 bg-gray-600 text-white rounded-md text-sm font-medium hover:bg-gray-700 transition-colors no-underline">
-          Download SRT
-        </a>
+           class="inline-flex items-center gap-1 px-4 py-2 bg-gray-600 text-white rounded-md text-sm font-medium hover:bg-gray-700 transition-colors no-underline"
+           x-text="$store.i18n.t('process.download_srt')"></a>
       </div>
 
       <!-- Segments table -->
@@ -152,11 +182,11 @@
         <table class="w-full text-sm">
           <thead class="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Start</th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">End</th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Japanese</th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Chinese</th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('process.col.id')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('process.col.start')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('process.col.end')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('process.col.japanese')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('process.col.chinese')"></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
@@ -183,7 +213,7 @@
 
     <form @submit.prevent="start" enctype="multipart/form-data"
           class="mb-6 p-6 bg-white rounded-lg border border-gray-200 shadow-sm">
-      <label class="block text-sm font-medium text-gray-700 mb-2">Upload Audio for Transcription</label>
+      <label class="block text-sm font-medium text-gray-700 mb-2" x-text="$store.i18n.t('transcribe.upload_label')"></label>
       <div class="flex items-center gap-3">
         <input type="file" name="file" accept="audio/*" required
                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4
@@ -195,16 +225,16 @@
                        hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
                        transition-colors cursor-pointer"
                 :disabled="uploading">
-          <span x-show="!uploading">Transcribe</span>
+          <span x-show="!uploading" x-text="$store.i18n.t('transcribe.button')"></span>
           <span x-show="uploading" class="inline-flex items-center gap-1">
             <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            Uploading...
+            <span x-text="$store.i18n.t('transcribe.uploading')"></span>
           </span>
         </button>
       </div>
     </form>
 
-    <p class="text-xs text-gray-400 mb-4">ASR settings are configured in the Settings tab.</p>
+    <p class="text-xs text-gray-400 mb-4" x-text="$store.i18n.t('transcribe.hint')"></p>
 
     <!-- Pipeline flow diagram -->
     <div class="mb-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
@@ -226,7 +256,7 @@
                        'text-blue-700': stage.status === 'running',
                        'text-green-700': stage.status === 'completed',
                        'text-red-700': stage.status === 'error',
-                     }" x-text="stage.name"></div>
+                     }" x-text="stageName(stage)"></div>
                 <div class="text-[11px]"
                      :class="{
                        'text-gray-400': stage.status === 'pending',
@@ -252,10 +282,10 @@
       <table class="w-full text-sm">
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Start (s)</th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">End (s)</th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Text</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('transcribe.col.id')"></th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('transcribe.col.start')"></th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('transcribe.col.end')"></th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('transcribe.col.text')"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -282,19 +312,24 @@
     <nav class="flex gap-2 mb-4 flex-wrap">
       <button @click="subtab = 'asr'" type="button"
               :class="subtab === 'asr' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer">ASR</button>
+              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
+              x-text="$store.i18n.t('subtab.asr')"></button>
       <button @click="subtab = 'translator'" type="button"
               :class="subtab === 'translator' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer">Translator</button>
+              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
+              x-text="$store.i18n.t('subtab.translator')"></button>
       <button @click="subtab = 'tts'" type="button"
               :class="subtab === 'tts' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer">TTS</button>
+              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
+              x-text="$store.i18n.t('subtab.tts')"></button>
       <button @click="subtab = 'mixing'" type="button"
               :class="subtab === 'mixing' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer">Mixing</button>
+              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
+              x-text="$store.i18n.t('subtab.mixing')"></button>
       <button @click="subtab = 'output'" type="button"
               :class="subtab === 'output' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer">Output</button>
+              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
+              x-text="$store.i18n.t('subtab.output')"></button>
     </nav>
 
     <!-- ==================== ASR subtab ==================== -->
@@ -304,18 +339,18 @@
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <button @click="asrOpen = !asrOpen" type="button"
                   class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700">ASR Settings</span>
+            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('asr.title')"></span>
             <svg :class="asrOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="asrOpen" class="px-4 py-3 space-y-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">ASR Backend</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.backend')"></label>
               <select x-model="s.asr_backend" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 {% for b in asr_backends %}<option value="{{ b.value }}">{{ b.label }}</option>{% endfor %}
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Device</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.device')"></label>
               <select x-model="s.whisper_device" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                 <option value="cpu">cpu</option><option value="cuda">cuda</option>
               </select>
@@ -324,28 +359,28 @@
             <template x-if="s.asr_backend === 'faster-whisper'">
               <div class="space-y-3">
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1">Whisper Model</label>
+                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.whisper_model')"></label>
                   <select x-model="s.whisper_model" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                     {% for m in whisper_models %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
                   </select>
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1">Compute Type</label>
+                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.compute_type')"></label>
                   <input x-model="s.whisper_compute_type" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="int8">
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1">Language</label>
+                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.language')"></label>
                   <input x-model="s.whisper_language" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="ja">
                 </div>
                 <div class="flex gap-4">
                   <div class="flex-1">
-                    <label class="block text-xs font-medium text-gray-500 mb-1">Beam Size</label>
+                    <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.beam_size')"></label>
                     <input x-model.number="s.whisper_beam_size" type="number" min="1" max="20" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                   </div>
                   <div class="flex items-end pb-1">
                     <label class="flex items-center gap-1.5 text-sm cursor-pointer">
                       <input x-model="s.whisper_vad_filter" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                      VAD Filter
+                      <span x-text="$store.i18n.t('asr.vad')"></span>
                     </label>
                   </div>
                 </div>
@@ -355,13 +390,13 @@
             <template x-if="s.asr_backend === 'kotoba-whisper'">
               <div class="space-y-3">
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1">Kotoba-Whisper Model</label>
+                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.kotoba_model')"></label>
                   <select x-model="s.kotoba_whisper_model" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                     {% for m in kotoba_models %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
                   </select>
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1">Chunk Length (s)</label>
+                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.chunk_length')"></label>
                   <input x-model.number="s.kotoba_whisper_chunk_length_s" type="number" min="5" max="60" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                 </div>
               </div>
@@ -378,40 +413,40 @@
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <button @click="transOpen = !transOpen" type="button"
                   class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700">Translation Settings</span>
+            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('trans.title')"></span>
             <svg :class="transOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="transOpen" class="px-4 py-3 space-y-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Translation Backend</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.backend')"></label>
               <select x-model="s.translation_backend" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                 {% for b in translation_backends %}<option value="{{ b.value }}">{{ b.label }}</option>{% endfor %}
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">OpenAI API Key</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.api_key')"></label>
               <input x-model="s.openai_api_key" type="password" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="sk-...">
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">OpenAI Base URL</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.base_url')"></label>
               <input x-model="s.openai_base_url" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="https://api.openai.com/v1">
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">OpenAI Model</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.model')"></label>
               <input x-model="s.openai_model" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="gpt-4o-mini">
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Translation System Prompt</label>
-              <textarea x-model="s.translation_prompt" rows="4" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="Leave empty for built-in ASMR prompt"></textarea>
-              <p class="text-[11px] text-gray-400 mt-0.5">Custom OpenAI translator prompt (stored in kakure.toml)</p>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.prompt')"></label>
+              <textarea x-model="s.translation_prompt" rows="4" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('trans.prompt_ph')"></textarea>
+              <p class="text-[11px] text-gray-400 mt-0.5" x-text="$store.i18n.t('trans.prompt_hint')"></p>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Translation Batch Size</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.batch')"></label>
               <div class="flex items-center gap-2">
                 <input x-model.number="s.translation_batch_size" type="range" min="1" max="50" class="flex-1">
                 <span class="text-xs text-gray-500 w-8 text-right" x-text="s.translation_batch_size"></span>
               </div>
-              <p class="text-[11px] text-gray-400 mt-0.5">Segments per API call (1 = one request each)</p>
+              <p class="text-[11px] text-gray-400 mt-0.5" x-text="$store.i18n.t('trans.batch_hint')"></p>
             </div>
           </div>
         </section>
@@ -425,12 +460,12 @@
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <button @click="ttsOpen = !ttsOpen" type="button"
                   class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700">TTS Settings</span>
+            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('tts.title')"></span>
             <svg :class="ttsOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="ttsOpen" class="px-4 py-3 space-y-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">TTS Backend</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.backend')"></label>
               <select x-model="s.tts_backend" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                 {% for b in tts_backends %}<option value="{{ b.value }}">{{ b.label }}</option>{% endfor %}
               </select>
@@ -439,22 +474,24 @@
             <template x-if="s.tts_backend === 'edge-tts'">
               <div class="space-y-3">
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1">Chinese Voice</label>
+                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.voice')"></label>
                   <select x-model="s.chinese_voice" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
-                    {% for v in chinese_voices %}<option value="{{ v.value }}">{{ v.label }}</option>{% endfor %}
+                    <template x-for="v in voices" :key="v">
+                      <option :value="v" x-text="v + ' (' + $store.i18n.t('voice.' + v) + ')'"></option>
+                    </template>
                   </select>
                 </div>
                 <div class="grid grid-cols-3 gap-3">
                   <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1">Rate</label>
+                    <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.rate')"></label>
                     <input x-model="s.tts_rate" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="+0%">
                   </div>
                   <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1">Volume</label>
+                    <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.volume')"></label>
                     <input x-model="s.tts_volume" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="+0%">
                   </div>
                   <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1">Pitch</label>
+                    <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.pitch')"></label>
                     <input x-model="s.tts_pitch" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="+0Hz">
                   </div>
                 </div>
@@ -464,15 +501,15 @@
             <template x-if="s.tts_backend === 'indextts'">
               <div class="space-y-3">
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1">Reference Audio</label>
-                  <input x-model="s.indextts_reference_audio" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="Path to reference audio file">
+                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.reference_audio')"></label>
+                  <input x-model="s.indextts_reference_audio" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.ref_audio_ph')">
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1">Model Directory</label>
-                  <input x-model="s.indextts_model_dir" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="Leave empty for auto-download">
+                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.model_dir')"></label>
+                  <input x-model="s.indextts_model_dir" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.model_dir_ph')">
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1">Language</label>
+                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.language')"></label>
                   <input x-model="s.indextts_language" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="zh">
                 </div>
               </div>
@@ -489,12 +526,12 @@
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <button @click="mixOpen = !mixOpen" type="button"
                   class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700">Mixing Settings</span>
+            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('mix.title')"></span>
             <svg :class="mixOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="mixOpen" class="px-4 py-3 space-y-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Mix Mode</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('mix.mode')"></label>
               <select x-model="s.mix_mode" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                 {% for m in mix_modes %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
               </select>
@@ -502,19 +539,19 @@
             </div>
             <div class="space-y-2">
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Overlay Volume: <span x-text="s.overlay_volume_db"></span> dB</label>
+                <label class="block text-xs font-medium text-gray-500 mb-1"><span x-text="$store.i18n.t('mix.overlay_vol')"></span>: <span x-text="s.overlay_volume_db"></span> dB</label>
                 <input x-model.number="s.overlay_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full">
               </div>
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Whisper Volume: <span x-text="s.whisper_volume_db"></span> dB</label>
+                <label class="block text-xs font-medium text-gray-500 mb-1"><span x-text="$store.i18n.t('mix.whisper_vol')"></span>: <span x-text="s.whisper_volume_db"></span> dB</label>
                 <input x-model.number="s.whisper_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full">
               </div>
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Spatial Cross: <span x-text="s.spatial_cross_db"></span> dB</label>
+                <label class="block text-xs font-medium text-gray-500 mb-1"><span x-text="$store.i18n.t('mix.spatial_cross')"></span>: <span x-text="s.spatial_cross_db"></span> dB</label>
                 <input x-model.number="s.spatial_cross_db" type="range" min="-30" max="0" step="0.5" class="w-full">
               </div>
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Sequential Gap (ms)</label>
+                <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('mix.seq_gap')"></label>
                 <input x-model.number="s.sequential_gap_ms" type="number" min="0" max="5000" step="100" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
               </div>
             </div>
@@ -525,32 +562,32 @@
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <button @click="sepOpen = !sepOpen" type="button"
                   class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700">Vocal Separation</span>
+            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('sep.title')"></span>
             <svg :class="sepOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="sepOpen" class="px-4 py-3 space-y-3">
             <label class="flex items-center gap-2 text-sm cursor-pointer">
               <input x-model="s.separate_vocals" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-              <span class="text-gray-700">Separate Vocals (Demucs)</span>
+              <span class="text-gray-700" x-text="$store.i18n.t('sep.enable')"></span>
             </label>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Demucs Model</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('sep.model')"></label>
               <select x-model="s.demucs_model" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                 {% for m in demucs_models %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Demucs Device</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('sep.device')"></label>
               <select x-model="s.demucs_device" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                 <option value="cpu">cpu</option><option value="cuda">cuda</option>
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Vocals Volume: <span x-text="s.vocals_volume_db"></span> dB</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1"><span x-text="$store.i18n.t('sep.vocals_vol')"></span>: <span x-text="s.vocals_volume_db"></span> dB</label>
               <input x-model.number="s.vocals_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full">
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Background Volume: <span x-text="s.background_volume_db"></span> dB</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1"><span x-text="$store.i18n.t('sep.bg_vol')"></span>: <span x-text="s.background_volume_db"></span> dB</label>
               <input x-model.number="s.background_volume_db" type="range" min="-30" max="10" step="0.5" class="w-full">
             </div>
           </div>
@@ -565,24 +602,24 @@
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <button @click="outOpen = !outOpen" type="button"
                   class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700">Output Settings</span>
+            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('out.title')"></span>
             <svg :class="outOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="outOpen" class="px-4 py-3 space-y-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Output Format</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('out.format')"></label>
               <select x-model="s.output_format" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                 {% for f in output_formats %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Output Bitrate</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('out.bitrate')"></label>
               <select x-model="s.output_bitrate" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
                 {% for b in bitrates %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Sample Rate</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('out.sample_rate')"></label>
               <input x-model.number="s.output_sample_rate" type="number" min="8000" max="192000" step="1000" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
             </div>
           </div>
@@ -592,12 +629,12 @@
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <button @click="pathOpen = !pathOpen" type="button"
                   class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700">Paths</span>
+            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('out.paths')"></span>
             <svg :class="pathOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="pathOpen" class="px-4 py-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Temp Directory</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('out.temp_dir')"></label>
               <input x-model="s.temp_dir" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="/tmp/kakure">
             </div>
           </div>
@@ -611,16 +648,17 @@
               class="px-6 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700
                      disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
               :disabled="saving">
-        <span x-show="!saving">Save Settings</span>
+        <span x-show="!saving" x-text="$store.i18n.t('save.button')"></span>
         <span x-show="saving" class="inline-flex items-center gap-1">
           <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-          Saving...
+          <span x-text="$store.i18n.t('save.saving')"></span>
         </span>
       </button>
       <button @click="reset" type="button"
               class="px-6 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium
-                     hover:bg-gray-50 transition-colors cursor-pointer">Reset to Defaults</button>
-      <span class="text-sm" :class="saveStatus.includes('Error') ? 'text-red-600' : 'text-green-600'"
+                     hover:bg-gray-50 transition-colors cursor-pointer"
+              x-text="$store.i18n.t('reset.button')"></button>
+      <span class="text-sm" :class="saveStatus.includes($store.i18n.t('save.error_prefix')) ? 'text-red-600' : 'text-green-600'"
             x-text="saveStatus"></span>
     </div>
 
@@ -649,7 +687,13 @@ function processTab() {
       this._stageOrder = this.stages.map(s => s.id);
     },
 
-    stageDesc(stage) { return stage.desc + (stage.status === 'completed' ? ' ✓' : stage.status === 'running' ? '...' : stage.status === 'error' ? ' ✗' : ''); },
+    stageName(stage) { return this.$store.i18n.t('stage.' + stage.id + '.name'); },
+    stageDesc(stage) {
+      return this.$store.i18n.t('stage.' + stage.id + '.desc')
+        + (stage.status === 'completed' ? this.$store.i18n.t('stages.completed')
+          : stage.status === 'running' ? this.$store.i18n.t('stages.running')
+          : stage.status === 'error' ? this.$store.i18n.t('stages.error') : '');
+    },
 
     async start(event) {
       this.uploading = true; this.error = null; this.completed = false;
@@ -659,7 +703,7 @@ function processTab() {
       const formData = new FormData(event.target);
       try {
         const res = await fetch('/api/process', { method: 'POST', body: formData });
-        if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed');
+        if (!res.ok) throw new Error((await res.json()).detail || this.$store.i18n.t('error.upload_failed'));
         const { job_id } = await res.json();
         this.jobId = job_id;
       } catch (e) { this.error = e.message; this.uploading = false; return; }
@@ -689,7 +733,7 @@ function processTab() {
           es.close();
         }
       };
-      es.onerror = () => { if (!this.completed && !this.error) this.error = 'Lost connection to the Kakure server — is it still running?'; es.close(); };
+      es.onerror = () => { if (!this.completed && !this.error) this.error = this.$store.i18n.t('error.lost_connection'); es.close(); };
     }
   };
 }
@@ -707,7 +751,13 @@ function transcribeTab() {
 
     init() { this._stageOrder = this.stages.map(s => s.id); },
 
-    stageDesc(stage) { return stage.desc + (stage.status === 'completed' ? ' ✓' : stage.status === 'running' ? '...' : stage.status === 'error' ? ' ✗' : ''); },
+    stageName(stage) { return this.$store.i18n.t('stage.' + stage.id + '.name'); },
+    stageDesc(stage) {
+      return this.$store.i18n.t('stage.' + stage.id + '.desc')
+        + (stage.status === 'completed' ? this.$store.i18n.t('stages.completed')
+          : stage.status === 'running' ? this.$store.i18n.t('stages.running')
+          : stage.status === 'error' ? this.$store.i18n.t('stages.error') : '');
+    },
 
     async start(event) {
       this.uploading = true; this.error = null; this.segments = [];
@@ -716,7 +766,7 @@ function transcribeTab() {
       const formData = new FormData(event.target);
       try {
         const res = await fetch('/api/transcribe', { method: 'POST', body: formData });
-        if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed');
+        if (!res.ok) throw new Error((await res.json()).detail || this.$store.i18n.t('error.upload_failed'));
         const { job_id } = await res.json();
         this.jobId = job_id;
       } catch (e) { this.error = e.message; this.uploading = false; return; }
@@ -740,12 +790,17 @@ function transcribeTab() {
         }
         if (d.type === 'finished') {
           this.segments = d.segments || [];
-          this.infoText = `Language: ${d.language} (${(d.language_probability * 100).toFixed(0)}% confidence) | Duration: ${d.duration?.toFixed(1)}s | Segments: ${d.segments?.length || 0}`;
+          this.infoText = this.$store.i18n.t('transcribe.info', {
+            lang: d.language,
+            pct: (d.language_probability * 100).toFixed(0),
+            dur: d.duration?.toFixed(1),
+            count: d.segments?.length || 0
+          });
           es.close();
         }
         if (d.type === 'error') { this.error = d.message; es.close(); }
       };
-      es.onerror = () => { if (!this.error) this.error = 'Lost connection to the Kakure server — is it still running?'; es.close(); };
+      es.onerror = () => { if (!this.error) this.error = this.$store.i18n.t('error.lost_connection'); es.close(); };
     }
   };
 }
@@ -753,14 +808,16 @@ function transcribeTab() {
 function settingsTab() {
   return {
     s: {{ settings_json | safe }},
+    voices: {{ chinese_voices_json | safe }},
     subtab: 'asr',
     asrOpen: true, transOpen: true, ttsOpen: true,
     mixOpen: true, sepOpen: true, outOpen: true, pathOpen: true,
     saving: false, saveStatus: '',
-    mixModeDesc(v) { return {{ mix_mode_descriptions_json | safe }}[v] || ''; },
+    mixModeDesc(v) { return this.$store.i18n.t('mix_mode.' + v); },
 
     async save() {
       this.saving = true; this.saveStatus = '';
+      const errPrefix = this.$store.i18n.t('save.error_prefix');
       try {
         const res = await fetch('/api/settings', {
           method: 'PUT',
@@ -768,22 +825,23 @@ function settingsTab() {
           body: JSON.stringify(this.s)
         });
         if (res.ok) {
-          this.saveStatus = '✓ Settings saved to kakure.toml';
+          this.saveStatus = this.$store.i18n.t('save.ok');
         } else {
           const err = await res.json();
-          this.saveStatus = 'Error: ' + (err.detail || 'Save failed');
+          this.saveStatus = errPrefix + (err.detail || this.$store.i18n.t('save.failed'));
         }
-      } catch (e) { this.saveStatus = 'Error: ' + e.message; }
+      } catch (e) { this.saveStatus = errPrefix + e.message; }
       this.saving = false;
     },
 
     async reset() {
+      const errPrefix = this.$store.i18n.t('save.error_prefix');
       try {
         const res = await fetch('/api/settings/reset', { method: 'POST' });
         const data = await res.json();
         this.s = data.settings;
-        this.saveStatus = '✓ Settings reset to defaults';
-      } catch (e) { this.saveStatus = 'Error: ' + e.message; }
+        this.saveStatus = this.$store.i18n.t('save.reset_ok');
+      } catch (e) { this.saveStatus = errPrefix + e.message; }
     }
   };
 }
