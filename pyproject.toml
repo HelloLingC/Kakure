@@ -49,7 +49,7 @@ indextts = [
     "indextts2-inference>=2.0.0",
 ]
 demucs = [
-    "demucs>=4.0.0",
+    "demucs>=4.1.0",
 ]
 
 [project.scripts]
