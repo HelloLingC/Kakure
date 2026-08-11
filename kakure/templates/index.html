@@ -278,10 +278,27 @@
   <!-- ================================================================ -->
   <div x-show="activeTab === 'settings'" x-data="settingsTab()" x-cloak>
 
-    <div class="grid grid-cols-2 gap-6">
+    <!-- Settings subtab navigation -->
+    <nav class="flex gap-2 mb-4 flex-wrap">
+      <button @click="subtab = 'asr'" type="button"
+              :class="subtab === 'asr' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer">ASR</button>
+      <button @click="subtab = 'translator'" type="button"
+              :class="subtab === 'translator' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer">Translator</button>
+      <button @click="subtab = 'tts'" type="button"
+              :class="subtab === 'tts' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer">TTS</button>
+      <button @click="subtab = 'mixing'" type="button"
+              :class="subtab === 'mixing' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer">Mixing</button>
+      <button @click="subtab = 'output'" type="button"
+              :class="subtab === 'output' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer">Output</button>
+    </nav>
 
-      <!-- Left Column -->
-      <div class="space-y-4">
+    <!-- ==================== ASR subtab ==================== -->
+    <div x-show="subtab === 'asr'" class="max-w-2xl space-y-4">
 
         <!-- ASR Settings -->
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -352,6 +369,11 @@
           </div>
         </section>
 
+    </div>
+
+    <!-- ==================== Translator subtab ==================== -->
+    <div x-show="subtab === 'translator'" class="max-w-2xl space-y-4">
+
         <!-- Translation Settings -->
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <button @click="transOpen = !transOpen" type="button"
@@ -393,6 +415,11 @@
             </div>
           </div>
         </section>
+
+    </div>
+
+    <!-- ==================== TTS subtab ==================== -->
+    <div x-show="subtab === 'tts'" class="max-w-2xl space-y-4">
 
         <!-- TTS Settings -->
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -453,10 +480,10 @@
           </div>
         </section>
 
-      </div>
+    </div>
 
-      <!-- Right Column -->
-      <div class="space-y-4">
+    <!-- ==================== Mixing subtab ==================== -->
+    <div x-show="subtab === 'mixing'" class="max-w-2xl space-y-4">
 
         <!-- Mixing Settings -->
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -529,6 +556,11 @@
           </div>
         </section>
 
+    </div>
+
+    <!-- ==================== Output subtab ==================== -->
+    <div x-show="subtab === 'output'" class="max-w-2xl space-y-4">
+
         <!-- Output Settings -->
         <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <button @click="outOpen = !outOpen" type="button"
@@ -571,7 +603,6 @@
           </div>
         </section>
 
-      </div>
     </div>
 
     <!-- Save / Reset -->
@@ -722,8 +753,9 @@ function transcribeTab() {
 function settingsTab() {
   return {
     s: {{ settings_json | safe }},
-    asrOpen: true, transOpen: false, ttsOpen: false,
-    mixOpen: true, sepOpen: false, outOpen: false, pathOpen: false,
+    subtab: 'asr',
+    asrOpen: true, transOpen: true, ttsOpen: true,
+    mixOpen: true, sepOpen: true, outOpen: true, pathOpen: true,
     saving: false, saveStatus: '',
     mixModeDesc(v) { return {{ mix_mode_descriptions_json | safe }}[v] || ''; },
 

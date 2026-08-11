@@ -71,7 +71,7 @@ Single-package layout: `kakure/` with these modules:
 | `api.py` | FastAPI application — REST endpoints (`/api/process`, `/api/transcribe`, `/api/settings`), SSE progress streaming, background job store. `_friendly_error()` maps common failures (missing ffmpeg, optional deps, OpenAI auth/network) to actionable messages shown in the UI. `/api/health` reports `ffmpeg` availability for the UI banner |
 | `routes.py` | Web UI routes — serves the SPA (`GET /`) with Jinja2 templates, passes enum options and settings as context |
 | `cli.py` | CLI entry point (`kakure` command) — launches uvicorn with configurable host/port/reload. Default host is `127.0.0.1`; auto-opens the browser unless `--no-browser` is passed |
-| `templates/index.html` | Single-page web UI — HTMX+Alpine.js with Process, Transcribe, and Settings tabs. Tailwind CSS via CDN. Alpine handles SSE progress streaming, file uploads, form state, and conditional field visibility |
+| `templates/index.html` | Single-page web UI — HTMX+Alpine.js with Process, Transcribe, and Settings tabs. Tailwind CSS via CDN. Alpine handles SSE progress streaming, file uploads, form state, and conditional field visibility. The Settings tab uses subtabs (ASR/Translator/TTS/Mixing/Output) with expanding cards |
 
 Data flow: `Segment` (asr) → `TranslatedSegment` (translator) → `dict` segments + `TTSResult` dicts (tts) → `MixInput` (mixer, optionally with `SeparatedAudio`) → `AudioSegment` → exported file.
 
