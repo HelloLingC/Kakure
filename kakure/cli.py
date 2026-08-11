@@ -14,14 +14,19 @@ def main() -> None:
     )
     parser.add_argument(
         "--host",
-        default="0.0.0.0",
-        help="Server hostname (default: 0.0.0.0)",
+        default="127.0.0.1",
+        help="Server hostname (default: 127.0.0.1)",
     )
     parser.add_argument(
         "--port",
         type=int,
         default=7860,
         help="Server port (default: 7860)",
+    )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not automatically open a browser window on startup",
     )
     parser.add_argument(
         "--reload",
@@ -35,6 +40,15 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+
+    if not args.no_browser:
+        import threading
+        import webbrowser
+
+        browser_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
+        url = f"http://{browser_host}:{args.port}"
+        logging.getLogger(__name__).info("Opening Kakure in your browser: %s", url)
+        threading.Timer(1.25, webbrowser.open, args=(url,)).start()
 
     import uvicorn
 

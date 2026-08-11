@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import queue as sync_queue
+import shutil
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -29,6 +30,63 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Friendly error mapping
+# ---------------------------------------------------------------------------
+
+
+def _friendly_error(exc: BaseException) -> str:
+    """Map common failure modes to human-readable, actionable messages."""
+    name = exc.__class__.__name__
+    module = exc.__class__.__module__
+    text = str(exc)
+
+    if isinstance(exc, ModuleNotFoundError):
+        if exc.name == "demucs":
+            return (
+                "Vocal separation requires Demucs, which is not installed.\n"
+                'Install it with: pip install -e ".[demucs]"'
+            )
+        if exc.name == "indextts":
+            return (
+                "The IndexTTS backend is not installed.\n"
+                'Install it with: pip install -e ".[indextts]" (requires an NVIDIA GPU).'
+            )
+        if exc.name in ("torch", "torchaudio", "transformers"):
+            return (
+                "The kotoba-whisper ASR backend needs PyTorch/Transformers, "
+                "which are not installed.\n"
+                'Install them with: pip install -e ".[kotoba]"'
+            )
+
+    if isinstance(exc, FileNotFoundError) and any(
+        s in text.lower() for s in ("ffmpeg", "avprobe", "winerror 2", "errno 2")
+    ):
+        return (
+            "ffmpeg was not found, and Kakure needs it to process audio.\n"
+            "Download ffmpeg from https://ffmpeg.org/download.html, add it to your PATH, "
+            "then restart Kakure."
+        )
+
+    if module.startswith("openai"):
+        if name == "AuthenticationError":
+            return "OpenAI rejected your API key. Open the Settings tab and check the key."
+        if name == "RateLimitError":
+            return "OpenAI rate limit hit — please wait a moment and try again."
+        if name == "APIConnectionError":
+            return (
+                "Could not reach the OpenAI servers. Check your internet connection and try again."
+            )
+
+    if "api key required" in text.lower():
+        return (
+            "A translation API key is missing. Open the Settings tab and add it, "
+            "or set the matching field in kakure.toml."
+        )
+
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -345,8 +403,8 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
     except Exception as e:
         logger.exception("Pipeline job %s failed", job.id)
         job.status = "failed"
-        job.error = str(e)
-        _push_event(job, {"type": "error", "message": str(e)})
+        job.error = _friendly_error(e)
+        _push_event(job, {"type": "error", "message": job.error})
 
 
 def _run_transcribe_job(job: Job, input_path: Path, settings: Settings) -> None:
@@ -416,8 +474,8 @@ def _run_transcribe_job(job: Job, input_path: Path, settings: Settings) -> None:
     except Exception as e:
         logger.exception("Transcription job %s failed", job.id)
         job.status = "failed"
-        job.error = str(e)
-        _push_event(job, {"type": "error", "message": str(e)})
+        job.error = _friendly_error(e)
+        _push_event(job, {"type": "error", "message": job.error})
 
 
 # ---------------------------------------------------------------------------
@@ -649,7 +707,7 @@ async def reset_settings():
 
 @app.get("/api/health")
 async def health():
-    return JSONResponse({"status": "ok"})
+    return JSONResponse({"status": "ok", "ffmpeg": shutil.which("ffmpeg") is not None})
 
 
 # ---------------------------------------------------------------------------

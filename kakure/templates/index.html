@@ -16,7 +16,10 @@
   .file-drop-zone.dragover { border-color: #3b82f6; background: #eff6ff; }
 </style>
 </head>
-<body class="bg-gray-50 min-h-screen font-sans antialiased" x-data="{ activeTab: 'process' }" x-cloak>
+<body class="bg-gray-50 min-h-screen font-sans antialiased"
+      x-data="{ activeTab: 'process', ffmpegOk: true, healthChecked: false }"
+      x-init="fetch('/api/health').then(r => r.json()).then(d => { ffmpegOk = d.ffmpeg !== false; healthChecked = true; }).catch(() => healthChecked = true)"
+      x-cloak>
 
 <div class="max-w-6xl mx-auto px-4 py-6">
 
@@ -25,6 +28,17 @@
     <h1 class="text-3xl font-bold text-gray-800">Kakure</h1>
     <p class="text-gray-500 mt-1">ASMR Japanese-to-Chinese bilingual voice overlay tool</p>
   </header>
+
+  <!-- ffmpeg warning banner -->
+  <div x-show="ffmpegOk === false" x-cloak
+       class="mb-6 p-3 bg-amber-50 text-amber-800 rounded-md border border-amber-200 text-sm">
+    <span class="font-medium">ffmpeg not detected.</span>
+    Kakure needs ffmpeg to process audio. Install it from
+    <a class="underline font-medium" href="https://ffmpeg.org/download.html" target="_blank" rel="noopener">ffmpeg.org</a>,
+    make sure it's on your PATH, then restart Kakure.
+    <button type="button" @click="ffmpegOk = true"
+            class="ml-2 text-amber-700 hover:text-amber-900 underline cursor-pointer">Dismiss</button>
+  </div>
 
   <!-- Tab Nav -->
   <nav class="flex gap-0 mb-6 border-b border-gray-200">
@@ -111,7 +125,7 @@
     <!-- Status / Error -->
     <div x-show="statusMessage && !error" class="mb-4 p-3 bg-blue-50 text-blue-700 rounded-md text-sm"
          x-text="statusMessage"></div>
-    <div x-show="error" class="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm" x-text="error"></div>
+    <div x-show="error" class="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm whitespace-pre-line" x-text="error"></div>
 
     <!-- Results -->
     <div x-show="completed" class="space-y-4" x-transition>
@@ -231,7 +245,7 @@
     <!-- Info / Error -->
     <div x-show="infoText && !error" class="mb-4 p-3 bg-blue-50 text-blue-700 rounded-md text-sm"
          x-text="infoText"></div>
-    <div x-show="error" class="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm" x-text="error"></div>
+    <div x-show="error" class="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm whitespace-pre-line" x-text="error"></div>
 
     <!-- Transcription table -->
     <div x-show="segments.length" class="overflow-x-auto bg-white rounded-lg border border-gray-200 shadow-sm" x-transition>
@@ -644,7 +658,7 @@ function processTab() {
           es.close();
         }
       };
-      es.onerror = () => { if (!this.completed && !this.error) this.error = 'Connection lost'; es.close(); };
+      es.onerror = () => { if (!this.completed && !this.error) this.error = 'Lost connection to the Kakure server — is it still running?'; es.close(); };
     }
   };
 }
@@ -700,7 +714,7 @@ function transcribeTab() {
         }
         if (d.type === 'error') { this.error = d.message; es.close(); }
       };
-      es.onerror = () => { if (!this.error) this.error = 'Connection lost'; es.close(); };
+      es.onerror = () => { if (!this.error) this.error = 'Lost connection to the Kakure server — is it still running?'; es.close(); };
     }
   };
 }

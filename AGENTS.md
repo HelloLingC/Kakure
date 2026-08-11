@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Kakure is a web-based tool that translates Japanese ASMR voice audio into bilingual audio by overlaying a Chinese voice track. Pipeline: ASR (faster-whisper or kotoba-whisper) → Translation (OpenAI/DeepL) → TTS (edge-tts or IndexTTS) → Vocal separation (Demucs, optional) → Audio mixing (pydub).
+Kakure is a web-based tool that translates Japanese ASMR voice audio into bilingual audio by overlaying a Chinese voice track. Pipeline: ASR (faster-whisper or kotoba-whisper) → Translation (OpenAI) → TTS (edge-tts or IndexTTS) → Vocal separation (Demucs, optional) → Audio mixing (pydub).
 
 ## Setup
 
@@ -26,12 +26,13 @@ Requires **ffmpeg** on PATH (pydub dependency for non-WAV formats).
 ## Usage
 
 ```bash
-# Launch the web UI (default: http://0.0.0.0:7860)
+# Launch the web UI (default: http://127.0.0.1:7860, browser opens automatically)
 kakure
 
 # With options
 kakure --port 8080          # custom port
-kakure --host 127.0.0.1     # bind to localhost only
+kakure --host 0.0.0.0       # bind to all interfaces (LAN/remote access)
+kakure --no-browser         # do not auto-open a browser window
 kakure --reload             # auto-reload on code changes (development)
 ```
 
@@ -51,7 +52,6 @@ cp kakure.toml.example kakure.toml
 
 Required settings:
 - `openai_api_key` — required when `translation_backend = "openai"` (default)
-- `deepl_api_key` — required when `translation_backend = "deepl"`
 
 All settings can also be changed in the web UI (Settings tab) and are persisted to `kakure.toml`.
 
@@ -63,14 +63,14 @@ Single-package layout: `kakure/` with these modules:
 |---|---|
 | `config.py` | Pydantic `Settings` model with TOML load/save (`load_settings`, `save_settings`, `get_settings`). All enums (ASRBackend, MixMode, TranslationBackend, WhisperModelSize, KotobaWhisperModel, ChineseVoice, TTSBackend, DemucsModel) |
 | `asr.py` | `BaseASRProcessor` (ABC) → `ASRProcessor` (faster-whisper) or `KotobaWhisperProcessor` (HuggingFace Transformers). Factory: `create_asr_processor(settings)`. Returns `TranscriptionResult` with `Segment`/`Word` dataclasses |
-| `translator.py` | `Translator` → `OpenAITranslator` or `DeepLTranslator` — lazy-inits backend, uses ASMR-specific system prompt, passes rolling context of last 3 segments |
+| `translator.py` | `Translator` → `OpenAITranslator` — lazy-inits backend, uses ASMR-specific system prompt, passes rolling context of last 3 segments |
 | `tts.py` | `BaseTTSProcessor` (ABC) → `EdgeTTSProcessor` (cloud, async) or `IndexTTSProcessor` (local GPU, voice cloning). Factory: `create_tts_processor(settings)`. Returns `TTSResult` dataclasses |
 | `separator.py` | `VocalSeparator` — uses Demucs to split audio into vocals and background. Returns `SeparatedAudio` dataclass. Lazy-loads model on first use |
 | `mixer.py` | `AudioMixer` — 5 modes: `dual` (stereo L=JP/R=CN), `overlay` (CN at -6dB with ducking), `sequential` (JP→gap→CN), `whisper` (CN at -15dB, no ducking), `spatial` (cross-panned stereo). When `separated` is provided in `MixInput`, uses background + reduced vocals as base instead of original |
 | `pipeline.py` | `Pipeline` — orchestrates ASR→Translation→TTS→(Separation)→Mixing→Export. Uses factories to select backends |
-| `api.py` | FastAPI application — REST endpoints (`/api/process`, `/api/transcribe`, `/api/settings`), SSE progress streaming, background job store |
+| `api.py` | FastAPI application — REST endpoints (`/api/process`, `/api/transcribe`, `/api/settings`), SSE progress streaming, background job store. `_friendly_error()` maps common failures (missing ffmpeg, optional deps, OpenAI auth/network) to actionable messages shown in the UI. `/api/health` reports `ffmpeg` availability for the UI banner |
 | `routes.py` | Web UI routes — serves the SPA (`GET /`) with Jinja2 templates, passes enum options and settings as context |
-| `cli.py` | CLI entry point (`kakure` command) — launches uvicorn with configurable host/port/reload |
+| `cli.py` | CLI entry point (`kakure` command) — launches uvicorn with configurable host/port/reload. Default host is `127.0.0.1`; auto-opens the browser unless `--no-browser` is passed |
 | `templates/index.html` | Single-page web UI — HTMX+Alpine.js with Process, Transcribe, and Settings tabs. Tailwind CSS via CDN. Alpine handles SSE progress streaming, file uploads, form state, and conditional field visibility |
 
 Data flow: `Segment` (asr) → `TranslatedSegment` (translator) → `dict` segments + `TTSResult` dicts (tts) → `MixInput` (mixer, optionally with `SeparatedAudio`) → `AudioSegment` → exported file.

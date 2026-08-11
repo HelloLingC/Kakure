@@ -269,7 +269,8 @@ class Translator:
             if self.settings.translation_backend == TranslationBackend.OPENAI:
                 if not self.settings.openai_api_key:
                     raise ValueError(
-                        "OpenAI API key required. Set OPENAI_API_KEY environment variable."
+                        "OpenAI API key is missing. Add it in the Settings tab "
+                        "or set openai_api_key in kakure.toml."
                     )
                 self._backend = OpenAITranslator(self.settings)
                 logger.info(

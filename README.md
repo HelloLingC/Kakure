@@ -7,7 +7,7 @@ Translates Japanese ASMR voice audio into bilingual voice audio by overlaying a 
 ## Features
 
 - **ASR**: Japanese speech recognition with timestamps — choose between faster-whisper (multilingual) or kotoba-whisper (Japanese-optimized)
-- **Translation**: Japanese-to-Chinese translation (OpenAI GPT / DeepL)
+- **Translation**: Japanese-to-Chinese translation (OpenAI GPT)
 - **TTS**: Chinese voice generation — choose between edge-tts (cloud, pre-built voices) or IndexTTS (local GPU, voice cloning)
 - **Vocal Separation**: Optional Demucs-based separation of vocals from background for cleaner mixing
 - **Mixing**: Four mixing modes for bilingual output:
@@ -76,9 +76,6 @@ Set via environment variables or `.env` file:
 ```bash
 # Required for OpenAI translation
 OPENAI_API_KEY=sk-...
-
-# Required for DeepL translation
-DEEPL_API_KEY=...
 
 # ASR backend: "faster-whisper" or "kotoba-whisper"
 KAKURE_ASR_BACKEND=faster-whisper
