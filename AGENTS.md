@@ -6,6 +6,20 @@ Kakure is a web-based tool that translates Japanese ASMR voice audio into biling
 
 ## Setup
 
+### Windows one-click install (non-technical users)
+
+Non-technical Windows users should double-click `install.bat`. It auto-installs Python 3.12
+if needed, then delegates the rest to `install.py` (stdlib-only, in the repo root), which
+creates `.venv`, upgrades pip, installs deps with optional Tsinghua mirror, downloads
+portable ffmpeg to `bin\ffmpeg`, and generates `kakure.toml`. Users then double-click
+`start-kakure.bat` to launch (or accept the launch prompt at the end of the installer).
+Batch files are ASCII + CRLF (no BOM), first line `@echo off` and second `chcp 936 >nul`
+(retained for Windows Terminal compatibility); because the messages are pure ASCII, the
+UTF-8/GBK mis-parse bug does not apply to them. `install.py` is UTF-8. See `.gitattributes`
+`-text` so batch bytes survive git checkout unchanged.
+
+### Manual install (developers)
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate

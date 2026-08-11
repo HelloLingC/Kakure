@@ -51,17 +51,17 @@ async def index(request: Request):
     settings = load_settings()
 
     pipeline_stages = [
-        {"id": "asr", "icon": "🎙️"},
-        {"id": "translate", "icon": "🌐"},
-        {"id": "tts", "icon": "🔊"},
-        {"id": "separate", "icon": "🎵"},
-        {"id": "mix", "icon": "🎛️"},
-        {"id": "export", "icon": "💾"},
+        {"id": "asr", "icon": "microphone"},
+        {"id": "translate", "icon": "language"},
+        {"id": "tts", "icon": "speaker-wave"},
+        {"id": "separate", "icon": "musical-note"},
+        {"id": "mix", "icon": "adjustments-horizontal"},
+        {"id": "export", "icon": "arrow-down-tray"},
     ]
 
     transcribe_stages = [
-        {"id": "load", "icon": "📦"},
-        {"id": "transcribe", "icon": "🎙️"},
+        {"id": "load", "icon": "archive-box"},
+        {"id": "transcribe", "icon": "microphone"},
     ]
 
     ctx = {

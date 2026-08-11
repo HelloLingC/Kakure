@@ -1,0 +1,3 @@
+# Windows batch scripts: keep CRLF + UTF-8 BOM (do not let git normalize)
+*.bat -text
+*.cmd -text

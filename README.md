@@ -1,104 +1,83 @@
 # Kakure (隠れ)
 
-ASMR Japanese-to-Chinese bilingual voice overlay tool.
+[English](README.en.md)
 
-Translates Japanese ASMR voice audio into bilingual voice audio by overlaying a Chinese voice track into the original audio.
+专为 ASMR 音声设计的双语翻译工具。
 
-## Features
+为音声融合其他语言的音轨。
 
-- **ASR**: Japanese speech recognition with timestamps — choose between faster-whisper (multilingual) or kotoba-whisper (Japanese-optimized)
-- **Translation**: Japanese-to-Chinese translation (OpenAI GPT)
-- **TTS**: Chinese voice generation — choose between edge-tts (cloud, pre-built voices) or IndexTTS (local GPU, voice cloning)
-- **Vocal Separation**: Optional Demucs-based separation of vocals from background for cleaner mixing
-- **Mixing**: Four mixing modes for bilingual output:
-  - `dual`: Japanese left channel, Chinese right channel
-  - `overlay`: Chinese voice overlaid at lower volume
-  - `sequential`: Japanese segment followed by Chinese translation
-  - `whisper`: Chinese voice at very low volume (subtle)
+## 功能特性
 
-## Installation
+- **ASR（语音识别）**：可选 faster-whisper（多语言）或 kotoba-whisper（日语优化）
+- **AI 翻译**：OpenAI GPT
+- **TTS（语音合成）**：中文语音生成——可选 edge-tts（云端、预制音色）或 IndexTTS（本地 GPU、声音克隆）
+- **人声分离**：可选基于 Demucs 的人声/背景分离，混合更干净
+- **混合模式**：四种双语输出模式：
+  - `dual`：日语左声道，中文右声道
+  - `overlay`：中文语音以较低音量叠加
+  - `sequential`：日语片段后跟中文翻译
+  - `whisper`：中文语音极低音量（耳语感）
+
+## Windows 一键安装（小白专用）
+
+不想碰命令行？用这种方式：
+
+1. 从 GitHub 页面点 **Code → Download ZIP** 下载并解压
+2. 双击 `install.bat` —— 脚本会自动：
+   - 检测/安装 Python 3.12（没有的话自动装，无需管理员权限）
+   - 创建虚拟环境 `.venv`
+   - 安装 Kakure 及全部依赖（可选用清华镜像加速）
+   - 自动下载免安装版 ffmpeg 到项目 `bin\ffmpeg` 目录（不用自己配 PATH）
+   - 生成 `kakure.toml` 配置文件
+3. 双击 `start-kakure.bat` —— 浏览器会自动打开 Kakure 界面
+4. 在 **Settings** 页填入 OpenAI API Key，然后上传音频开始使用
+
+> **提示**
+> - 首次运行会自动下载 Whisper 模型（large-v3 约 3GB），请耐心等待
+> - 一键安装默认只装核心功能（faster-whisper + edge-tts，CPU 可用）
+> - 需要 GPU 进阶功能（IndexTTS 声音克隆、Demucs 人声分离、kotoba-whisper）的
+>   用户请见下方「手动安装」说明，在虚拟环境中 `pip install -e ".[可选组件]"`
+
+## 手动安装
 
 ```bash
-# Create virtual environment
+# 创建虚拟环境
 python -m venv .venv
 source .venv/bin/activate
 
-# Install with dependencies
+# 安装依赖
 pip install -e ".[dev]"
 
-# For kotoba-whisper ASR backend (optional):
+# kotoba-whisper ASR 后端（可选）：
 pip install -e ".[kotoba]"
 
-# For IndexTTS TTS backend (optional, requires NVIDIA GPU):
+# IndexTTS TTS 后端（可选，需要 NVIDIA GPU）：
 pip install -e ".[indextts]"
 
-# For vocal separation with Demucs (optional, requires GPU for speed):
+# Demucs 人声分离（可选，GPU 加速更快）：
 pip install -e ".[demucs]"
 ```
 
-Requires [ffmpeg](https://ffmpeg.org/) for audio processing.
+需要 [ffmpeg](https://ffmpeg.org/) 处理音频。
 
-## Quick Start
+## 快速上手
 
-```bash
-# Process an ASMR audio file (default: faster-whisper ASR, edge-tts TTS)
-kakure process input.mp3
-
-# Specify output and mixing mode
-kakure process input.mp3 -o output.mp3 -m dual
-
-# Full pipeline with kotoba-whisper ASR
-kakure process input.mp3 --asr-backend kotoba-whisper -o output.mp3
-
-# Full pipeline with IndexTTS (voice cloning from reference audio)
-kakure process input.mp3 --tts-backend indextts --reference-audio voice_sample.wav -o output.mp3
-
-# Process with vocal separation for cleaner mixing
-kakure process input.mp3 --separate-vocals -o output.mp3
-
-# Transcribe only (no translation)
-kakure transcribe input.mp3
-
-# ASR only with kotoba-whisper
-kakure transcribe input.mp3 --asr-backend kotoba-whisper
-
-# List available Chinese voices (edge-tts)
-kakure voices
-
-# Show current configuration
-kakure config
-```
-
-## Configuration
-
-Set via environment variables or `.env` file:
+Kakure 通过本地 Web 界面使用，命令行只负责启动服务：
 
 ```bash
-# Required for OpenAI translation
-OPENAI_API_KEY=sk-...
+# 启动 Kakure（默认：http://127.0.0.1:7860，浏览器自动打开）
+kakure
 
-# ASR backend: "faster-whisper" or "kotoba-whisper"
-KAKURE_ASR_BACKEND=faster-whisper
+# 自定义端口
+kakure --port 8080
 
-# TTS backend: "edge-tts" or "indextts"
-KAKURE_TTS_BACKEND=edge-tts
+# 绑定到所有网卡（局域网/远程访问）
+kakure --host 0.0.0.0
 
-# Optional settings
-KAKURE_WHISPER_MODEL=large-v3
-KAKURE_MIX_MODE=overlay
-KAKURE_CHINESE_VOICE=zh-CN-XiaoxiaoNeural
-
-# IndexTTS settings (when KAKURE_TTS_BACKEND=indextts)
-KAKURE_INDEXTTS_REFERENCE_AUDIO=path/to/reference_voice.wav
-KAKURE_INDEXTTS_MODEL_DIR=  # Leave empty for auto-download
-
-# Vocal separation (Demucs)
-KAKURE_SEPARATE_VOCALS=false
-KAKURE_DEMUCS_MODEL=htdemucs
-KAKURE_VOCALS_VOLUME_DB=-6.0
-KAKURE_BACKGROUND_VOLUME_DB=0.0
+# 不自动打开浏览器
+kakure --no-browser
 ```
 
-## License
+## 许可证
 
 MIT
