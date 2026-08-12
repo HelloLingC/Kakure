@@ -108,6 +108,22 @@ class EdgeTTSProcessor(BaseTTSProcessor):
 
             output_path = output_dir / f"segment_{seg['id']:04d}.mp3"
 
+            # Reuse an already-synthesized segment (checkpoint resume / crash recovery)
+            if output_path.exists() and output_path.stat().st_size > 0:
+                from pydub import AudioSegment
+
+                audio = AudioSegment.from_mp3(str(output_path))
+                duration_ms = len(audio)
+                results.append(
+                    TTSResult(
+                        segment_id=seg["id"],
+                        audio_path=output_path,
+                        duration_ms=duration_ms,
+                    )
+                )
+                logger.debug("Reusing existing TTS segment %d (%dms)", seg["id"], duration_ms)
+                continue
+
             try:
                 await self._generate_segment(text, output_path)
 
@@ -230,6 +246,22 @@ class IndexTTSProcessor(BaseTTSProcessor):
 
             # IndexTTS outputs WAV files
             output_path = output_dir / f"segment_{seg['id']:04d}.wav"
+
+            # Reuse an already-synthesized segment (checkpoint resume / crash recovery)
+            if output_path.exists() and output_path.stat().st_size > 0:
+                from pydub import AudioSegment
+
+                audio = AudioSegment.from_wav(str(output_path))
+                duration_ms = len(audio)
+                results.append(
+                    TTSResult(
+                        segment_id=seg["id"],
+                        audio_path=output_path,
+                        duration_ms=duration_ms,
+                    )
+                )
+                logger.debug("Reusing existing TTS segment %d (%dms)", seg["id"], duration_ms)
+                continue
 
             try:
                 self.model.infer(

@@ -42,6 +42,38 @@ class SeparatedAudio:
     background: AudioSegment  # Background (drums + bass + other) track
 
 
+def load_separated(
+    output_dir: Path | str,
+    original_path: Path | str | None = None,
+) -> SeparatedAudio | None:
+    """Load separated vocals/background WAVs from a checkpoint directory.
+
+    Returns ``None`` if either WAV file is missing. The ``original`` track is
+    loaded from ``original_path`` when available, otherwise built as silence
+    (mixer only uses its length for alignment).
+    """
+    output_dir = Path(output_dir)
+    vocals_path = output_dir / "vocals.wav"
+    background_path = output_dir / "background.wav"
+    if not vocals_path.is_file() or not background_path.is_file():
+        return None
+
+    vocals = AudioSegment.from_wav(str(vocals_path))
+    background = AudioSegment.from_wav(str(background_path))
+
+    if original_path and Path(original_path).is_file():
+        original = AudioSegment.from_file(str(original_path))
+    else:
+        original = AudioSegment.silent(duration=max(len(vocals), len(background)))
+
+    # Match lengths (Demucs may produce slightly different lengths)
+    max_len = max(len(original), len(vocals), len(background))
+    original = original + AudioSegment.silent(duration=max(0, max_len - len(original)))
+    vocals = vocals + AudioSegment.silent(duration=max(0, max_len - len(vocals)))
+    background = background + AudioSegment.silent(duration=max(0, max_len - len(background)))
+    return SeparatedAudio(original=original, vocals=vocals, background=background)
+
+
 class VocalSeparator:
     """Separates audio into vocals and background using Demucs.
 
@@ -72,11 +104,17 @@ class VocalSeparator:
             logger.info("Demucs model loaded successfully")
         return self._separator
 
-    def separate(self, audio_path: Path | str) -> SeparatedAudio:
+    def separate(
+        self,
+        audio_path: Path | str,
+        output_dir: Path | str | None = None,
+    ) -> SeparatedAudio:
         """Separate an audio file into vocals and background.
 
         Args:
             audio_path: Path to the audio file to separate.
+            output_dir: Directory to write ``vocals.wav`` and ``background.wav``
+                into. Defaults to a temporary directory.
 
         Returns:
             SeparatedAudio with original, vocals, and background tracks.
@@ -106,22 +144,24 @@ class VocalSeparator:
                 else:
                     background_tensor = background_tensor + stem_tensor
 
-        # If no background stems, create silence
-
         original_audio = AudioSegment.from_file(str(audio_path))
         sample_rate = self.separator.samplerate
 
-        # Convert tensors to AudioSegments via temp WAV files
-        import tempfile
+        # Convert tensors to AudioSegments via WAV files
+        if output_dir is None:
+            import tempfile
 
-        temp_dir = Path(tempfile.mkdtemp(prefix="kakure_demucs_"))
+            output_dir = Path(tempfile.mkdtemp(prefix="kakure_demucs_"))
+        else:
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
 
-        vocals_path = temp_dir / "vocals.wav"
+        vocals_path = output_dir / "vocals.wav"
         _tensor_to_wav(vocals_tensor, vocals_path, sample_rate)
         vocals = AudioSegment.from_wav(str(vocals_path))
 
         if background_tensor is not None:
-            background_path = temp_dir / "background.wav"
+            background_path = output_dir / "background.wav"
             _tensor_to_wav(background_tensor, background_path, sample_rate)
             background = AudioSegment.from_wav(str(background_path))
         else:

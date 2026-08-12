@@ -23,10 +23,10 @@ kotoba_whisper_chunk_length_s = 15
 # Translation backend
 translation_backend = "openai"
 
-# OpenAI settings
-openai_model = "gpt-4o-mini"
-# Optional: custom OpenAI API base URL (for Azure, local proxies, etc.)
-openai_base_url = ""
+# OpenAI-compatible API settings (defaults target DeepSeek)
+openai_model = "deepseek-v4-flash"
+# Optional: custom OpenAI-compatible API base URL
+openai_base_url = "https://api.deepseek.com"
 
 # Optional: custom translation system prompt (OpenAI backend only).
 # Leave empty to use the built-in ASMR translation prompt.
@@ -46,6 +46,11 @@ translation_batch_size = 10
 # of translation_batch_size. Default 8000 leaves headroom for system prompt +
 # JSON output on gpt-4o-mini's 16k context.
 translation_batch_token_limit = 8000
+
+# Max concurrent translation API calls. 1 = sequential (legacy behavior).
+# Higher values dispatch multiple batches in parallel for faster translation,
+# but may hit provider rate limits. Set to 4 for a good speed/limit balance.
+translation_max_concurrency = 4
 
 # TTS backend: "edge-tts" or "indextts"
 tts_backend = "edge-tts"
@@ -92,5 +97,18 @@ output_format = "mp3"
 output_bitrate = "192k"
 output_sample_rate = 44100
 
-# Temp directory for intermediate files
-temp_dir = "/tmp/kakure"
+# Temp directory for intermediate files (relative to the workspace where
+# Kakure is launched)
+temp_dir = "tmp"
+
+# Directory for generated SRT subtitle files ({stem}_ja.srt, {stem}_zh.srt,
+# {stem}_bilingual.srt). Leave empty to write in the same directory as the
+# input file (temp_dir in the web UI, input file directory in the CLI).
+srt_output_dir = ""
+
+# Checkpoints - cache pipeline stage results (ASR, translation, TTS, vocal
+# separation) keyed by input-file hash so re-running the same file skips
+# already-completed stages (e.g. after a crash or a mix-settings tweak).
+enable_checkpoints = true
+# Directory for cached stage results. Leave empty for <temp_dir>/checkpoints.
+checkpoint_dir = ""

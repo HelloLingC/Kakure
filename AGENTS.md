@@ -50,10 +50,9 @@ kakure --no-browser         # do not auto-open a browser window
 kakure --reload             # auto-reload on code changes (development)
 ```
 
-The web UI has three tabs:
+The web UI has two tabs:
 - **Process** — Upload Japanese ASMR audio, configure pipeline options, run the full bilingual pipeline, and download the output
-- **Transcribe** — Upload audio for ASR-only transcription (no translation, no API key needed)
-- **Settings** — Edit and persist all configuration options. Changes are saved to `kakure.toml` and loaded as defaults for Process and Transcribe tabs.
+- **Settings** — Edit and persist all configuration options. Changes are saved to `kakure.toml` and loaded as defaults for the Process tab.
 
 ## Configuration
 
@@ -77,15 +76,16 @@ Single-package layout: `kakure/` with these modules:
 |---|---|
 | `config.py` | Pydantic `Settings` model with TOML load/save (`load_settings`, `save_settings`, `get_settings`). All enums (ASRBackend, MixMode, TranslationBackend, WhisperModelSize, KotobaWhisperModel, ChineseVoice, TTSBackend, DemucsModel) |
 | `asr.py` | `BaseASRProcessor` (ABC) → `ASRProcessor` (faster-whisper) or `KotobaWhisperProcessor` (HuggingFace Transformers). Factory: `create_asr_processor(settings)`. Returns `TranscriptionResult` with `Segment`/`Word` dataclasses |
-| `translator.py` | `Translator` → `OpenAITranslator` — lazy-inits backend, uses ASMR-specific system prompt, passes rolling context of last 3 segments |
+| `translator.py` | `Translator` → `OpenAITranslator` — lazy-inits backend, uses ASMR-specific system prompt. Splits segments into independent batches and dispatches them concurrently via `ThreadPoolExecutor` bounded by `translation_max_concurrency` (no rolling context) |
 | `tts.py` | `BaseTTSProcessor` (ABC) → `EdgeTTSProcessor` (cloud, async) or `IndexTTSProcessor` (local GPU, voice cloning). Factory: `create_tts_processor(settings)`. Returns `TTSResult` dataclasses |
 | `separator.py` | `VocalSeparator` — uses Demucs to split audio into vocals and background. Returns `SeparatedAudio` dataclass. Lazy-loads model on first use |
 | `mixer.py` | `AudioMixer` — 5 modes: `dual` (stereo L=JP/R=CN), `overlay` (CN at -6dB with ducking), `sequential` (JP→gap→CN), `whisper` (CN at -15dB, no ducking), `spatial` (cross-panned stereo). When `separated` is provided in `MixInput`, uses background + reduced vocals as base instead of original |
+| `checkpoint.py` | `CheckpointStore` — caches ASR/translation/TTS/separation results under `<checkpoint_dir>/<input-sha256>/` (default `<temp_dir>/checkpoints/`). Each stage stores a JSON record with a settings fingerprint + upstream artifact hash; changing settings or upstream data invalidates the stage (and downstream). Builder helpers (`run_asr`, `run_translation`, `run_tts`, `run_separation`) are shared by the CLI pipeline and the web API. TTS resumes per-segment via text-hash comparison; Demucs WAVs are reused when present |
 | `pipeline.py` | `Pipeline` — orchestrates ASR→Translation→TTS→(Separation)→Mixing→Export. Uses factories to select backends |
-| `api.py` | FastAPI application — REST endpoints (`/api/process`, `/api/transcribe`, `/api/settings`), SSE progress streaming, background job store. `_friendly_error()` maps common failures (missing ffmpeg, optional deps, OpenAI auth/network) to actionable messages shown in the UI. `/api/health` reports `ffmpeg` availability for the UI banner |
+| `api.py` | FastAPI application — REST endpoints (`/api/process`, `/api/settings`), SSE progress streaming, background job store. `_friendly_error()` maps common failures (missing ffmpeg, optional deps, OpenAI auth/network) to actionable messages shown in the UI. `/api/health` reports `ffmpeg` availability for the UI banner |
 | `routes.py` | Web UI routes — serves the SPA (`GET /`) with Jinja2 templates, passes enum options and settings as context |
 | `cli.py` | CLI entry point (`kakure` command) — launches uvicorn with configurable host/port/reload. Default host is `127.0.0.1`; auto-opens the browser unless `--no-browser` is passed |
-| `templates/index.html` | Single-page web UI — HTMX+Alpine.js with Process, Transcribe, and Settings tabs. Tailwind CSS via CDN. Alpine handles SSE progress streaming, file uploads, form state, and conditional field visibility. The Settings tab uses subtabs (ASR/Translator/TTS/Mixing/Output) with expanding cards |
+| `templates/index.html` | Single-page web UI — HTMX+Alpine.js with Process and Settings tabs. Tailwind CSS via CDN. Alpine handles SSE progress streaming, file uploads, form state, and conditional field visibility. The Settings tab uses subtabs (ASR/Translator/TTS/Mixing/Output) with expanding cards |
 
 Data flow: `Segment` (asr) → `TranslatedSegment` (translator) → `dict` segments + `TTSResult` dicts (tts) → `MixInput` (mixer, optionally with `SeparatedAudio`) → `AudioSegment` → exported file.
 
@@ -140,7 +140,10 @@ Install: `pip install -e ".[demucs]"`. Model downloads ~2-6GB on first use.
 - **Demucs model downloads on first run** — `htdemucs` is ~2GB. Use `demucs_device = "cuda"` for GPU acceleration.
 - **edge-tts is async** — `EdgeTTSProcessor.generate()` is async; `generate_sync()` wraps it with `asyncio.run()`. Don't nest inside another event loop.
 - **Translation backends are lazy** — API keys are only validated when `Translator.backend` property is first accessed, not at construction.
+- **Translation is context-free and concurrent** — batches are independent (no rolling context) and dispatched via `ThreadPoolExecutor` bounded by `translation_max_concurrency` (default 4). 1 = sequential. Higher values are faster but can hit provider rate limits; a failed batch falls back to per-segment requests.
 - **Config is TOML** — settings are stored in `kakure.toml`, not `.env`. Use the web UI Settings tab or edit the file directly.
+- **Checkpoints are on by default** — completed ASR/translation/TTS/Demucs stages are cached under `<temp_dir>/checkpoints/<input-sha256>/` and reused on re-runs. Disable via `enable_checkpoints = false`; clear all caches via the Settings tab button or `POST /api/checkpoints/clear`. Cached data is invalidated automatically when stage-affecting settings change (fingerprint) or the upstream data changes (hash chain).
+- **TTS resumes per segment** — a segment's cached audio is reused only if its text hash still matches the current translation; otherwise it is regenerated. Both TTS processors skip existing non-empty segment files, so a hard crash mid-TTS resumes on the next run.
 - **pydub uses milliseconds** — all timing in pydub is ms. ASR timestamps are in seconds. Conversion happens in mixer via `int(seg["start"] * 1000)`.
 - **TTS audio trimming** — if generated Chinese speech is longer than the Japanese segment, it gets trimmed (not time-stretched). This can cut off translations in overlay/dual/whisper modes.
 - **Sequential mode extends duration** — unlike other modes, sequential inserts gaps and TTS audio, making the output longer than the input.

@@ -122,14 +122,17 @@ class Settings(BaseModel):
     # Translation
     translation_backend: TranslationBackend = TranslationBackend.OPENAI
     openai_api_key: str = ""
-    openai_base_url: str = ""
-    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = "https://api.deepseek.com"
+    openai_model: str = "deepseek-v4-flash"
     translation_prompt: str = ""  # Custom system prompt; empty = built-in ASMR prompt
     # Batch translation: segments per API call. 1 = single-segment mode (legacy)
     translation_batch_size: int = 10
     # Approx max input tokens per batch (chars * 1.2 estimate). A batch is
     # split early when this is exceeded, regardless of translation_batch_size.
     translation_batch_token_limit: int = 8000
+    # Max concurrent translation API calls. 1 = sequential (legacy). Higher
+    # values parallelize batches for faster translation but may hit rate limits.
+    translation_max_concurrency: int = Field(default=4, ge=1)
 
     # TTS backend selection
     tts_backend: TTSBackend = TTSBackend.EDGE_TTS
@@ -165,7 +168,19 @@ class Settings(BaseModel):
     output_sample_rate: int = 44100
 
     # Paths
-    temp_dir: str = "/tmp/kakure"
+    # Relative to the running workspace (current working directory).
+    temp_dir: str = "tmp"
+    # Directory for generated SRT subtitle files. Empty = write in the same
+    # directory as the input file (temp_dir in the web UI, input file dir in
+    # the CLI).
+    srt_output_dir: str = ""
+
+    # Checkpoints
+    # Cache pipeline stage results (ASR, translation, TTS, vocal separation)
+    # on disk so re-running the same input file skips completed stages.
+    enable_checkpoints: bool = True
+    # Directory for cached stage results. Empty = <temp_dir>/checkpoints.
+    checkpoint_dir: str = ""
 
     model_config = {"extra": "ignore"}
 

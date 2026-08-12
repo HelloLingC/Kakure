@@ -17,7 +17,17 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
+from kakure.checkpoint import (
+    CheckpointStore,
+    clear_all_checkpoints,
+    run_asr,
+    run_separation,
+    run_translation,
+    run_tts,
+)
 from kakure.config import Settings, _settings_to_dict, load_settings, save_settings
+from kakure.srt import srt_path as srt_output_path
+from kakure.srt import write_srt
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +106,7 @@ def _friendly_error(exc: BaseException) -> str:
 
 @dataclass
 class Job:
-    """Tracks a single pipeline or transcription job."""
+    """Tracks a single pipeline job."""
 
     id: str
     status: str = "pending"
@@ -104,6 +114,7 @@ class Job:
     result: dict[str, Any] | None = None
     error: str | None = None
     _temp_input: Path | None = None
+    original_name: str | None = None
 
 
 _jobs: dict[str, Job] = {}
@@ -123,41 +134,32 @@ def _push_event(job: Job, event: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# SRT export helper
-# ---------------------------------------------------------------------------
-
-
-def _write_srt(segments: list, path: Path) -> None:
-    lines: list[str] = []
-    for seg in segments:
-        start_h, start_rem = divmod(seg.start, 3600)
-        start_m, start_s = divmod(start_rem, 60)
-        start_ms = int((seg.start - int(seg.start)) * 1000)
-
-        end_h, end_rem = divmod(seg.end, 3600)
-        end_m, end_s = divmod(end_rem, 60)
-        end_ms = int((seg.end - int(seg.end)) * 1000)
-
-        lines.append(str(seg.id + 1))
-        lines.append(
-            f"{int(start_h):02d}:{int(start_m):02d}:{int(start_s):02d},{start_ms:03d}"
-            f" --> "
-            f"{int(end_h):02d}:{int(end_m):02d}:{int(end_s):02d},{end_ms:03d}"
-        )
-        lines.append(seg.translated_text)
-        lines.append("")
-
-    path.write_text("\n".join(lines), encoding="utf-8")
-
-
-# ---------------------------------------------------------------------------
 # Pipeline runner (background thread)
 # ---------------------------------------------------------------------------
+
+
+def _srt_base(job: Job, input_path: Path, settings: Settings) -> tuple[Path, str]:
+    """Return ``(output_dir, stem)`` for generated SRT files.
+
+    When ``settings.srt_output_dir`` is set, SRTs are written there using the
+    original uploaded filename stem; otherwise they go next to the input temp
+    file using its (job-id) stem to avoid collisions between concurrent jobs.
+    """
+    if settings.srt_output_dir:
+        output_dir = Path(settings.srt_output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        stem = Path(job.original_name).stem if job.original_name else input_path.stem
+    else:
+        output_dir = input_path.parent
+        stem = input_path.stem
+    return output_dir, stem
 
 
 def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
     try:
         job.status = "running"
+        srt_dir, srt_stem = _srt_base(job, input_path, settings)
+        ckpt = CheckpointStore(input_path, settings)
 
         # --- Stage: ASR ---
         _push_event(
@@ -173,7 +175,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
         from kakure.asr import create_asr_processor
 
         asr = create_asr_processor(settings)
-        transcription = asr.transcribe(input_path)
+        transcription, asr_cached = run_asr(ckpt, lambda: asr.transcribe(input_path))
         if not transcription.segments:
             _push_event(
                 job,
@@ -193,11 +195,16 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                 "type": "progress",
                 "stage": "asr",
                 "status": "completed",
+                "cached": asr_cached,
                 "segments": len(transcription.segments),
                 "language": transcription.language,
                 "duration": transcription.duration,
             },
         )
+
+        # Export Japanese subtitles right after ASR
+        srt_ja_path = srt_output_path(srt_stem, "ja", srt_dir)
+        write_srt(transcription.segments, srt_ja_path)
 
         # --- Stage: Translation ---
         _push_event(
@@ -212,18 +219,20 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
 
         from kakure.translator import TranslatedSegment, Translator
 
-        translated = [
-            TranslatedSegment(
-                id=seg.id,
-                start=seg.start,
-                end=seg.end,
-                original_text=seg.text,
-                translated_text="",
-            )
-            for seg in transcription.segments
-        ]
-        translator = Translator(settings)
-        translated = translator.translate_segments(translated)
+        def _translate(segments):
+            translated = [
+                TranslatedSegment(
+                    id=seg.id,
+                    start=seg.start,
+                    end=seg.end,
+                    original_text=seg.text,
+                    translated_text="",
+                )
+                for seg in segments
+            ]
+            return Translator(settings).translate_segments(translated)
+
+        translated, tr_cached = run_translation(ckpt, transcription.segments, _translate)
 
         _push_event(
             job,
@@ -231,8 +240,13 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                 "type": "progress",
                 "stage": "translate",
                 "status": "completed",
+                "cached": tr_cached,
             },
         )
+
+        # Export Chinese subtitles right after translation
+        srt_zh_path = srt_output_path(srt_stem, "zh", srt_dir)
+        write_srt(translated, srt_zh_path, text=lambda seg: seg.translated_text)
 
         # --- Stage: TTS ---
         _push_event(
@@ -258,15 +272,18 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
             for seg in translated
         ]
         tts = create_tts_processor(settings)
-        tts_results = tts.generate_sync(segment_dicts)
-        tts_dicts = [
-            {
-                "segment_id": r.segment_id,
-                "audio_path": str(r.audio_path),
-                "duration_ms": r.duration_ms,
-            }
-            for r in tts_results
-        ]
+        tts_dicts, tts_reused = run_tts(
+            ckpt,
+            segment_dicts,
+            lambda needed, outdir: [
+                {
+                    "segment_id": r.segment_id,
+                    "audio_path": str(r.audio_path),
+                    "duration_ms": r.duration_ms,
+                }
+                for r in tts.generate_sync(needed, output_dir=outdir)
+            ],
+        )
 
         _push_event(
             job,
@@ -274,7 +291,8 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                 "type": "progress",
                 "stage": "tts",
                 "status": "completed",
-                "segments": len(tts_results),
+                "cached": tts_reused > 0,
+                "segments": len(tts_dicts),
             },
         )
 
@@ -294,7 +312,11 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
             from kakure.separator import VocalSeparator
 
             separator = VocalSeparator(settings)
-            separated = separator.separate(input_path)
+            separated, sep_cached = run_separation(
+                ckpt,
+                input_path,
+                lambda outdir: separator.separate(input_path, output_dir=outdir),
+            )
 
             _push_event(
                 job,
@@ -302,6 +324,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                     "type": "progress",
                     "stage": "separate",
                     "status": "completed",
+                    "cached": sep_cached,
                 },
             )
         else:
@@ -368,8 +391,12 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
             sample_rate=settings.output_sample_rate,
         )
 
-        srt_path = input_path.parent / f"{input_path.stem}_bilingual.srt"
-        _write_srt(translated, srt_path)
+        srt_path = srt_output_path(srt_stem, "bilingual", srt_dir)
+        write_srt(
+            translated,
+            srt_path,
+            text=lambda seg: f"{seg.original_text}\n{seg.translated_text}",
+        )
 
         duration = len(mixed_audio) / 1000.0
         segments_data = [
@@ -386,6 +413,8 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
         job.result = {
             "output_path": str(output_path),
             "srt_path": str(srt_path),
+            "srt_ja_path": str(srt_ja_path),
+            "srt_zh_path": str(srt_zh_path),
             "duration": duration,
             "segments": segments_data,
             "vocals_separated": separated is not None,
@@ -402,77 +431,6 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
 
     except Exception as e:
         logger.exception("Pipeline job %s failed", job.id)
-        job.status = "failed"
-        job.error = _friendly_error(e)
-        _push_event(job, {"type": "error", "message": job.error})
-
-
-def _run_transcribe_job(job: Job, input_path: Path, settings: Settings) -> None:
-    try:
-        job.status = "running"
-
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "load",
-                "status": "running",
-                "message": "Loading ASR model...",
-            },
-        )
-
-        from kakure.asr import create_asr_processor
-
-        asr = create_asr_processor(settings)
-
-        _push_event(
-            job,
-            {"type": "progress", "stage": "load", "status": "completed"},
-        )
-
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "transcribe",
-                "status": "running",
-                "message": "Transcribing...",
-            },
-        )
-
-        result = asr.transcribe(input_path)
-
-        segments_data = [
-            {
-                "id": seg.id,
-                "start": seg.start,
-                "end": seg.end,
-                "text": seg.text,
-            }
-            for seg in result.segments
-        ]
-
-        job.result = {
-            "language": result.language,
-            "language_probability": result.language_probability,
-            "duration": result.duration,
-            "segments": segments_data,
-        }
-        job.status = "completed"
-
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "transcribe",
-                "status": "completed",
-                "segments": len(result.segments),
-            },
-        )
-        _push_event(job, {"type": "finished", **job.result})
-
-    except Exception as e:
-        logger.exception("Transcription job %s failed", job.id)
         job.status = "failed"
         job.error = _friendly_error(e)
         _push_event(job, {"type": "error", "message": job.error})
@@ -508,6 +466,7 @@ async def process_audio(file: UploadFile = File(...)):
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     job = _create_job()
+    job.original_name = file.filename
     suffix = Path(file.filename).suffix if file.filename else ".wav"
     input_path = tmp_dir / f"kakure_input_{job.id}{suffix}"
     input_path.write_bytes(await file.read())
@@ -558,6 +517,18 @@ async def process_result(job_id: str):
     return FileResponse(output_path, media_type=media_type, filename=output_path.name)
 
 
+def _srt_response(job: Job, key: str, kind: str) -> FileResponse:
+    """Serve a stored SRT file with a human-friendly download name."""
+    assert job.result is not None
+    srt_file = Path(job.result[key])
+    if job.original_name:
+        stem = Path(job.original_name).stem
+        filename = f"{stem}_{kind}.srt"
+    else:
+        filename = srt_file.name
+    return FileResponse(srt_file, media_type="text/plain", filename=filename)
+
+
 @app.get("/api/process/{job_id}/srt")
 async def process_srt(job_id: str):
     with _jobs_lock:
@@ -567,9 +538,31 @@ async def process_srt(job_id: str):
     if job.status != "completed":
         raise HTTPException(409, "Job not yet complete")
 
-    assert job.result is not None
-    srt_path = Path(job.result["srt_path"])
-    return FileResponse(srt_path, media_type="text/plain", filename=srt_path.name)
+    return _srt_response(job, "srt_path", "bilingual")
+
+
+@app.get("/api/process/{job_id}/srt_ja")
+async def process_srt_ja(job_id: str):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    if job.status != "completed":
+        raise HTTPException(409, "Job not yet complete")
+
+    return _srt_response(job, "srt_ja_path", "ja")
+
+
+@app.get("/api/process/{job_id}/srt_zh")
+async def process_srt_zh(job_id: str):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    if job.status != "completed":
+        raise HTTPException(409, "Job not yet complete")
+
+    return _srt_response(job, "srt_zh_path", "zh")
 
 
 @app.get("/api/process/{job_id}/segments")
@@ -583,65 +576,6 @@ async def process_segments(job_id: str):
 
     assert job.result is not None
     return JSONResponse(job.result.get("segments", []))
-
-
-# ---------------------------------------------------------------------------
-# Transcribe endpoints
-# ---------------------------------------------------------------------------
-
-
-@app.post("/api/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
-    settings = load_settings()
-    tmp_dir = Path(settings.temp_dir)
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-
-    job = _create_job()
-    suffix = Path(file.filename).suffix if file.filename else ".wav"
-    input_path = tmp_dir / f"kakure_input_{job.id}{suffix}"
-    input_path.write_bytes(await file.read())
-    job._temp_input = input_path
-
-    thread = threading.Thread(
-        target=_run_transcribe_job,
-        args=(job, input_path, settings),
-        daemon=True,
-    )
-    thread.start()
-
-    return JSONResponse({"job_id": job.id})
-
-
-@app.get("/api/transcribe/{job_id}")
-async def transcribe_progress(job_id: str):
-    with _jobs_lock:
-        job = _jobs.get(job_id)
-    if job is None:
-        raise HTTPException(404, "Job not found")
-
-    return StreamingResponse(
-        _sse_stream(job),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@app.get("/api/transcribe/{job_id}/result")
-async def transcribe_result(job_id: str):
-    with _jobs_lock:
-        job = _jobs.get(job_id)
-    if job is None:
-        raise HTTPException(404, "Job not found")
-    if job.status == "pending" or job.status == "running":
-        raise HTTPException(409, "Job not yet complete")
-    if job.status == "failed":
-        raise HTTPException(500, job.error or "Job failed")
-
-    return JSONResponse(job.result)
 
 
 # ---------------------------------------------------------------------------
@@ -698,6 +632,15 @@ async def reset_settings():
         return JSONResponse({"status": "ok", "settings": _settings_to_dict(defaults)})
     except Exception as e:
         raise HTTPException(500, f"Failed to reset settings: {e}")
+
+
+@app.post("/api/checkpoints/clear")
+async def clear_checkpoints():
+    try:
+        cleared = clear_all_checkpoints(load_settings())
+        return JSONResponse({"status": "ok", "cleared": cleared})
+    except Exception as e:
+        raise HTTPException(500, f"Failed to clear checkpoints: {e}")
 
 
 # ---------------------------------------------------------------------------

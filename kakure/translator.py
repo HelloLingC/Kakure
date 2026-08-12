@@ -61,11 +61,11 @@ def _parse_batch_json(raw: str, items: list[tuple[int, str]]) -> dict[int, str]:
     expected_ids = {i for i, _ in items}
     missing = expected_ids - set(out.keys())
     if missing:
-        # Try fallback by index: if ids are 0..n-1 but zh list present, accept positionally
-        if sorted(out.keys()) == list(range(len(items))) and sorted(expected_ids) == list(
-            range(len(items))
-        ):
-            return out
+        # Positional fallback: some models renumber ids as 0..n-1 regardless of
+        # the ids shown in the prompt. If the response ids are exactly 0..n-1
+        # and the count matches, map them back to the expected ids in input order.
+        if len(out) == len(items) and sorted(out.keys()) == list(range(len(items))):
+            return {idx: out[pos] for pos, (idx, _) in enumerate(items)}
         raise ValueError(f"Batch response missing ids: {sorted(missing)}; raw={raw!r}")
     return out
 
@@ -287,14 +287,13 @@ class Translator:
         return self.backend.translate(segment.original_text)
 
     def translate_segments(self, segments: list[TranslatedSegment]) -> list[TranslatedSegment]:
-        """Translate all segments, using context from previous segments.
+        """Translate all segments.
 
-        When ``settings.translation_batch_size > 1``, segments are translated
-        in batches (one API call per batch) using a structured JSON output
-        prompt. On batch parse failure, the failing batch falls back to
-        per-segment single requests. When ``batch_size == 1`` (or the backend
-        has no ``translate_batch``), behavior is identical to legacy
-        per-segment translation.
+        Segments are split into batches (one API call per batch, structured
+        JSON output) and dispatched concurrently through a thread pool bounded
+        by ``settings.translation_max_concurrency``. Batches are independent
+        (no rolling context), so they can run in parallel. On batch failure the
+        failing batch falls back to per-segment single requests.
 
         Args:
             segments: List of segments with original text.
@@ -305,72 +304,87 @@ class Translator:
         logger.info("Translating %d segments", len(segments))
         batch_size = getattr(self.settings, "translation_batch_size", 1) or 1
         token_limit = getattr(self.settings, "translation_batch_token_limit", 8000) or 8000
+        concurrency = getattr(self.settings, "translation_max_concurrency", 4) or 1
 
+        batches = _iter_batches(segments, batch_size, token_limit)
         if batch_size <= 1 or not hasattr(self.backend, "translate_batch"):
-            self._translate_one_by_one(segments)
+            self._translate_in_parallel([[seg] for seg in segments], concurrency)
+            logger.info("Translation complete")
             return segments
 
-        context_parts: list[str] = []
-        for batch in _iter_batches(segments, batch_size, token_limit):
-            context = "\n".join(context_parts[-3:]) if context_parts else ""
-            self._translate_batch_with_fallback(batch, context, context_parts)
+        self._translate_in_parallel(batches, concurrency)
         logger.info("Translation complete")
         return segments
 
-    def _translate_one_by_one(self, segments: list[TranslatedSegment]) -> None:
-        """Legacy per-segment translation path (also used as batch fallback)."""
-        context_parts: list[str] = []
-        for seg in segments:
-            context = "\n".join(context_parts[-3:]) if context_parts else ""
+    def _translate_in_parallel(
+        self,
+        batches: list[list[TranslatedSegment]],
+        concurrency: int,
+    ) -> None:
+        """Translate all batches concurrently via a bounded thread pool.
+
+        Each batch is translated independently (no rolling context). Batches
+        that fail are retried per-segment within the same pool.
+
+        Args:
+            batches: List of segment batches (each dispatched as one request).
+            concurrency: Max number of concurrent API calls.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        logger.info(
+            "Translating %d batches with concurrency=%d",
+            len(batches),
+            max(1, concurrency),
+        )
+        with ThreadPoolExecutor(max_workers=max(1, concurrency)) as executor:
+            future_to_batch = {
+                executor.submit(self._translate_batch_worker, batch): batch for batch in batches
+            }
+            for future in as_completed(future_to_batch):
+                batch = future_to_batch[future]
+                try:
+                    results = future.result()
+                except Exception as e:
+                    logger.warning(
+                        "Batch translate failed (%s); falling back to per-segment for %d segments",
+                        e,
+                        len(batch),
+                    )
+                    self._translate_batch_one_by_one(batch)
+                    continue
+
+                for seg in batch:
+                    if seg.id in results and results[seg.id]:
+                        seg.translated_text = results[seg.id]
+                    else:
+                        logger.warning(
+                            "Batch missing translation for segment %d; using original", seg.id
+                        )
+                        seg.translated_text = seg.original_text
+                logger.info(
+                    "Translated batch of %d segments (ids=%s)",
+                    len(batch),
+                    [s.id for s in batch],
+                )
+
+    def _translate_batch_worker(
+        self,
+        batch: list[TranslatedSegment],
+    ) -> dict[int, str]:
+        """Translate one batch in a worker thread. Returns {id: translation}."""
+        if len(batch) == 1:
+            text = self.backend.translate(batch[0].original_text)
+            return {batch[0].id: text}
+        items = [(seg.id, seg.original_text) for seg in batch]
+        return self.backend.translate_batch(items)  # type: ignore[attr-defined]
+
+    def _translate_batch_one_by_one(self, batch: list[TranslatedSegment]) -> None:
+        """Translate each segment of a batch individually (fallback path)."""
+        for seg in batch:
             try:
-                translated = self.backend.translate(seg.original_text, context=context)
-                seg.translated_text = translated
-                context_parts.append(f"{translated}")
-                logger.debug("Segment %d: %s -> %s", seg.id, seg.original_text, translated)
+                seg.translated_text = self.backend.translate(seg.original_text)
+                logger.debug("Segment %d: %s -> %s", seg.id, seg.original_text, seg.translated_text)
             except Exception as e:
                 logger.error("Failed to translate segment %d: %s", seg.id, e)
                 seg.translated_text = seg.original_text  # Fallback to original
-
-    def _translate_batch_with_fallback(
-        self,
-        batch: list[TranslatedSegment],
-        context: str,
-        context_parts: list[str],
-    ) -> None:
-        """Translate one batch via API. On failure, fall back to per-segment."""
-        if len(batch) == 1:
-            self._translate_one_by_one(batch)
-            # Mirror context update from one-by-one path
-            for seg in batch:
-                if seg.translated_text and seg.translated_text != seg.original_text:
-                    context_parts.append(f"JP: {seg.original_text}\nCN: {seg.translated_text}")
-            return
-
-        items = [(seg.id, seg.original_text) for seg in batch]
-        try:
-            results = self.backend.translate_batch(items, context=context)  # type: ignore[attr-defined]
-            for seg in batch:
-                if seg.id in results and results[seg.id]:
-                    seg.translated_text = results[seg.id]
-                else:
-                    logger.warning(
-                        "Batch missing translation for segment %d; using original", seg.id
-                    )
-                    seg.translated_text = seg.original_text
-                context_parts.append(f"JP: {seg.original_text}\nCN: {seg.translated_text}")
-            logger.info(
-                "Translated batch of %d segments (ids=%s)",
-                len(batch),
-                [s.id for s in batch],
-            )
-        except Exception as e:
-            logger.warning(
-                "Batch translate failed (%s); falling back to per-segment for %d segments",
-                e,
-                len(batch),
-            )
-            self._translate_one_by_one(batch)
-            # Mirror context update from one-by-one path
-            for seg in batch:
-                if seg.translated_text and seg.translated_text != seg.original_text:
-                    context_parts.append(f"JP: {seg.original_text}\nCN: {seg.translated_text}")

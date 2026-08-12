@@ -4,10 +4,43 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kakure - ASMR Bilingual Voice Overlay</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="/static/i18n.js"></script>
+<script src="/static/vendor/tailwind.js"></script>
+<script>tailwind.config = { darkMode: 'class' };</script>
+<script>
+(function () {
+  var m = localStorage.getItem('kakure.theme') || 'auto';
+  var dark = m === 'dark' || (m === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if (dark) document.documentElement.classList.add('dark');
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+})();
+</script>
+<script src="/static/i18n.js?v={{ i18n_version }}"></script>
 <script>
 document.addEventListener('alpine:init', () => {
+  Alpine.store('theme', {
+    mode: localStorage.getItem('kakure.theme') || 'auto',
+    init() {
+      this.apply();
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (this.mode === 'auto') this.apply(); });
+    },
+    isDark() {
+      return this.mode === 'dark' || (this.mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    },
+    apply() {
+      document.documentElement.classList.toggle('dark', this.isDark());
+      document.documentElement.style.colorScheme = this.isDark() ? 'dark' : 'light';
+    },
+    set(mode) {
+      this.mode = mode;
+      localStorage.setItem('kakure.theme', mode);
+      this.apply();
+    },
+    cycle() {
+      const order = ['light', 'dark', 'auto'];
+      this.set(order[(order.indexOf(this.mode) + 1) % order.length]);
+    },
+    label() { return Alpine.store('i18n').t('theme.' + this.mode); }
+  });
   Alpine.store('i18n', {
     lang: localStorage.getItem('kakure.lang') || 'en',
     t(key, vars) {
@@ -27,7 +60,7 @@ document.addEventListener('alpine:init', () => {
   });
 });
 </script>
-<script defer src="https://unpkg.com/alpinejs@3.14.9"></script>
+<script defer src="/static/vendor/alpine.js"></script>
 <style>
   @keyframes kakure-pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
@@ -36,9 +69,11 @@ document.addEventListener('alpine:init', () => {
   .stage-running { animation: kakure-pulse 2s ease-in-out infinite; }
   [x-cloak] { display: none !important; }
   .file-drop-zone.dragover { border-color: #3b82f6; background: #eff6ff; }
+  .dark .file-drop-zone.dragover { background: #172554; }
+  body { transition: background-color 0.3s ease; }
 </style>
 </head>
-<body class="bg-gray-50 min-h-screen font-sans antialiased"
+<body class="bg-gray-50 dark:bg-gray-900 min-h-screen font-sans antialiased"
       x-data="{ activeTab: 'process', ffmpegOk: true, healthChecked: false }"
       x-init="fetch('/api/health').then(r => r.json()).then(d => { ffmpegOk = d.ffmpeg !== false; healthChecked = true; }).catch(() => healthChecked = true)"
       x-cloak>
@@ -82,38 +117,44 @@ document.addEventListener('alpine:init', () => {
   <!-- Header -->
   <header class="mb-6 flex items-start justify-between gap-4">
     <div>
-      <h1 class="text-3xl font-bold text-gray-800">Kakure</h1>
-      <p class="text-gray-500 mt-1" x-text="$store.i18n.t('app.subtitle')"></p>
+      <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-100">Kakure</h1>
+      <p class="text-gray-500 dark:text-gray-400 mt-1" x-text="$store.i18n.t('app.subtitle')"></p>
     </div>
-    <button type="button" @click="$store.i18n.toggle()"
-            class="shrink-0 px-3 py-1.5 rounded-full border border-gray-300 bg-white text-sm text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
-            x-text="$store.i18n.t('lang.toggle')"></button>
+    <div class="flex items-center gap-2">
+      <button type="button" @click="$store.theme.cycle()"
+              :title="$store.i18n.t('theme.toggle')"
+              class="shrink-0 px-3 py-1.5 rounded-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer">
+        <svg x-show="$store.theme.mode === 'light'" class="inline-block h-4 w-4 -mt-0.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/></svg>
+        <svg x-show="$store.theme.mode === 'dark'" class="inline-block h-4 w-4 -mt-0.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"/></svg>
+        <svg x-show="$store.theme.mode === 'auto'" class="inline-block h-4 w-4 -mt-0.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><use href="#icon-adjustments-horizontal"></use></svg>
+        <span x-text="$store.theme.label()"></span>
+      </button>
+      <button type="button" @click="$store.i18n.toggle()"
+              class="shrink-0 px-3 py-1.5 rounded-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+              x-text="$store.i18n.t('lang.toggle')"></button>
+    </div>
   </header>
 
   <!-- ffmpeg warning banner -->
   <div x-show="ffmpegOk === false" x-cloak
-       class="mb-6 p-3 bg-amber-50 text-amber-800 rounded-md border border-amber-200 text-sm">
+       class="mb-6 p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 rounded-md border border-amber-200 dark:border-amber-800 text-sm">
     <span class="font-medium" x-text="$store.i18n.t('ffmpeg.title')"></span>
     <span x-text="$store.i18n.t('ffmpeg.warn1')"></span>
     <a class="underline font-medium" href="https://ffmpeg.org/download.html" target="_blank" rel="noopener">ffmpeg.org</a>
     <span x-text="$store.i18n.t('ffmpeg.warn2')"></span>
     <button type="button" @click="ffmpegOk = true"
-            class="ml-2 text-amber-700 hover:text-amber-900 underline cursor-pointer"
+            class="ml-2 text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 underline cursor-pointer"
             x-text="$store.i18n.t('ffmpeg.dismiss')"></button>
   </div>
 
   <!-- Tab Nav -->
-  <nav class="flex gap-0 mb-6 border-b border-gray-200">
+  <nav class="flex gap-0 mb-6 border-b border-gray-200 dark:border-gray-700">
     <button @click="activeTab = 'process'"
-      :class="activeTab === 'process' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+      :class="activeTab === 'process' ? 'border-blue-500 dark:border-blue-400 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'"
       class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer"
       x-text="$store.i18n.t('tab.process')"></button>
-    <button @click="activeTab = 'transcribe'"
-      :class="activeTab === 'transcribe' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
-      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer"
-      x-text="$store.i18n.t('tab.transcribe')"></button>
     <button @click="activeTab = 'settings'"
-      :class="activeTab === 'settings' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+      :class="activeTab === 'settings' ? 'border-blue-500 dark:border-blue-400 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'"
       class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer"
       x-text="$store.i18n.t('tab.settings')"></button>
   </nav>
@@ -124,13 +165,13 @@ document.addEventListener('alpine:init', () => {
   <div x-show="activeTab === 'process'" x-data="processTab()" x-cloak>
 
     <form @submit.prevent="start" enctype="multipart/form-data"
-          class="mb-6 p-6 bg-white rounded-lg border border-gray-200 shadow-sm">
-      <label class="block text-sm font-medium text-gray-700 mb-2" x-text="$store.i18n.t('process.upload_label')"></label>
+          class="mb-6 p-6 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+      <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2" x-text="$store.i18n.t('process.upload_label')"></label>
       <div class="flex items-center gap-3">
         <input type="file" name="file" accept="audio/*" required
-               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4
+               class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4
                       file:rounded-md file:border-0 file:text-sm file:font-medium
-                      file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100
+                      file:bg-blue-50 dark:file:bg-blue-900/40 file:text-blue-700 dark:file:text-blue-300 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/60
                       cursor-pointer" :disabled="uploading">
         <button type="submit"
                 class="shrink-0 px-6 py-2 bg-blue-600 text-white rounded-md text-sm font-medium
@@ -146,216 +187,119 @@ document.addEventListener('alpine:init', () => {
       </div>
     </form>
 
-    <p class="text-xs text-gray-400 mb-4" x-text="$store.i18n.t('process.hint')"></p>
+    <p class="text-xs text-gray-400 dark:text-gray-500 mb-4" x-text="$store.i18n.t('process.hint')"></p>
 
     <!-- Pipeline flow diagram -->
-    <div class="mb-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+    <div class="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
       <div class="flex items-center gap-2 flex-wrap">
         <template x-for="(stage, i) in stages" :key="stage.id">
           <div class="flex items-center gap-2">
             <div class="flex items-center gap-2 px-3 py-2 rounded-lg border-2 min-w-[110px] transition-all duration-300"
                  :class="{
-                   'border-gray-200 bg-gray-50': stage.status === 'pending',
-                   'border-blue-500 bg-blue-50 stage-running': stage.status === 'running',
-                   'border-green-500 bg-green-50': stage.status === 'completed',
-                   'border-gray-200 bg-gray-50 border-dashed': stage.status === 'skipped',
-                   'border-red-500 bg-red-50': stage.status === 'error',
+                   'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900': stage.status === 'pending',
+                   'border-blue-500 dark:border-blue-500 bg-blue-50 dark:bg-blue-950 stage-running': stage.status === 'running',
+                   'border-green-500 dark:border-green-500 bg-green-50 dark:bg-green-950': stage.status === 'completed',
+                   'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 border-dashed': stage.status === 'skipped',
+                   'border-red-500 dark:border-red-500 bg-red-50 dark:bg-red-950': stage.status === 'error',
                  }">
               <svg class="w-5 h-5 shrink-0"
                    :class="{
-                     'text-gray-400': stage.status === 'pending',
-                     'text-blue-600': stage.status === 'running',
-                     'text-green-600': stage.status === 'completed',
-                     'text-gray-300': stage.status === 'skipped',
-                     'text-red-600': stage.status === 'error',
+                     'text-gray-400 dark:text-gray-500': stage.status === 'pending',
+                     'text-blue-600 dark:text-blue-400': stage.status === 'running',
+                     'text-green-600 dark:text-green-400': stage.status === 'completed',
+                     'text-gray-300 dark:text-gray-600': stage.status === 'skipped',
+                     'text-red-600 dark:text-red-400': stage.status === 'error',
                    }">
                 <use :href="'#icon-' + stage.icon"></use>
               </svg>
               <div>
                 <div class="font-semibold text-xs"
                      :class="{
-                       'text-gray-500': stage.status === 'pending',
-                       'text-blue-700': stage.status === 'running',
-                       'text-green-700': stage.status === 'completed',
-                       'text-gray-400': stage.status === 'skipped',
-                       'text-red-700': stage.status === 'error',
+                       'text-gray-500 dark:text-gray-400': stage.status === 'pending',
+                       'text-blue-700 dark:text-blue-300': stage.status === 'running',
+                       'text-green-700 dark:text-green-300': stage.status === 'completed',
+                       'text-gray-400 dark:text-gray-500': stage.status === 'skipped',
+                       'text-red-700 dark:text-red-300': stage.status === 'error',
                      }" x-text="stageName(stage)"></div>
                 <div class="text-[11px]"
                      :class="{
-                       'text-gray-400': stage.status === 'pending',
-                       'text-blue-500': stage.status === 'running',
-                       'text-green-600': stage.status === 'completed',
-                       'text-gray-300': stage.status === 'skipped',
-                       'text-red-500': stage.status === 'error',
+                       'text-gray-400 dark:text-gray-500': stage.status === 'pending',
+                       'text-blue-500 dark:text-blue-400': stage.status === 'running',
+                       'text-green-600 dark:text-green-400': stage.status === 'completed',
+                       'text-gray-300 dark:text-gray-600': stage.status === 'skipped',
+                       'text-red-500 dark:text-red-400': stage.status === 'error',
                      }" x-text="stageDesc(stage)"></div>
               </div>
-              <svg x-show="stage.status === 'running'" class="animate-spin w-4 h-4 text-blue-600 shrink-0"><use href="#icon-spinner"></use></svg>
-              <svg x-show="stage.status === 'completed'" class="w-4 h-4 text-green-600 shrink-0"><use href="#icon-check-circle"></use></svg>
-              <svg x-show="stage.status === 'error'" class="w-4 h-4 text-red-600 shrink-0"><use href="#icon-x-circle"></use></svg>
+              <svg x-show="stage.status === 'running'" class="animate-spin w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0"><use href="#icon-spinner"></use></svg>
+              <svg x-show="stage.status === 'completed'" class="w-4 h-4 text-green-600 dark:text-green-400 shrink-0"><use href="#icon-check-circle"></use></svg>
+              <svg x-show="stage.status === 'error'" class="w-4 h-4 text-red-600 dark:text-red-400 shrink-0"><use href="#icon-x-circle"></use></svg>
             </div>
-            <span x-show="i < stages.length - 1" class="text-gray-300 text-xl font-light">›</span>
+            <span x-show="i < stages.length - 1" class="text-gray-300 dark:text-gray-600 text-xl font-light">›</span>
           </div>
         </template>
       </div>
     </div>
 
     <!-- Status / Error -->
-    <div x-show="statusMessage && !error" class="mb-4 p-3 bg-blue-50 text-blue-700 rounded-md text-sm"
-         x-text="statusMessage"></div>
-    <div x-show="error" class="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm whitespace-pre-line" x-text="error"></div>
+    <div x-show="jobId && !completed && !error" class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md text-sm flex items-center justify-between gap-3">
+      <span x-text="statusMessage" x-show="statusMessage"></span>
+      <span class="shrink-0 font-medium">
+        <svg class="inline-block w-4 h-4 -mt-0.5 animate-spin"><use href="#icon-spinner"></use></svg>
+        <span x-text="$store.i18n.t('elapsed')"></span>: <span x-text="formatElapsed()" class="tabular-nums"></span>
+      </span>
+    </div>
+    <div x-show="error" class="mb-4 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-md text-sm whitespace-pre-line" x-text="error"></div>
 
     <!-- Results -->
     <div x-show="completed" class="space-y-4" x-transition>
-      <div class="p-4 bg-green-50 rounded-md border border-green-200">
-        <p class="text-sm text-green-700">
+      <div class="p-4 bg-green-50 dark:bg-green-900/30 rounded-md border border-green-200 dark:border-green-800">
+        <p class="text-sm text-green-700 dark:text-green-300">
           <span x-text="$store.i18n.t('process.done')"></span>
           <span x-text="$store.i18n.t('process.duration')"></span>: <span x-text="result.duration.toFixed(1)"></span>s |
           <span x-text="$store.i18n.t('process.segments')"></span>: <span x-text="result.segments_count ?? result.segments?.length"></span>
           <span x-show="result.vocals_separated"> | <span x-text="$store.i18n.t('process.vocals_separated')"></span></span>
         </p>
       </div>
-      <div class="flex gap-3">
+      <div class="flex gap-3 flex-wrap">
         <a :href="'/api/process/' + jobId + '/result'"
            class="inline-flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition-colors no-underline"
            x-text="$store.i18n.t('process.download_audio')"></a>
+        <a :href="'/api/process/' + jobId + '/srt_ja'"
+           class="inline-flex items-center gap-1 px-4 py-2 bg-gray-600 dark:bg-gray-700 text-white rounded-md text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors no-underline"
+           x-text="$store.i18n.t('process.download_srt_ja')"></a>
+        <a :href="'/api/process/' + jobId + '/srt_zh'"
+           class="inline-flex items-center gap-1 px-4 py-2 bg-gray-600 dark:bg-gray-700 text-white rounded-md text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors no-underline"
+           x-text="$store.i18n.t('process.download_srt_zh')"></a>
         <a :href="'/api/process/' + jobId + '/srt'"
-           class="inline-flex items-center gap-1 px-4 py-2 bg-gray-600 text-white rounded-md text-sm font-medium hover:bg-gray-700 transition-colors no-underline"
+           class="inline-flex items-center gap-1 px-4 py-2 bg-gray-600 dark:bg-gray-700 text-white rounded-md text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors no-underline"
            x-text="$store.i18n.t('process.download_srt')"></a>
       </div>
 
       <!-- Segments table -->
-      <div class="overflow-x-auto bg-white rounded-lg border border-gray-200 shadow-sm" x-show="segments.length">
+      <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm" x-show="segments.length">
         <table class="w-full text-sm">
-          <thead class="bg-gray-50 border-b border-gray-200">
+          <thead class="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('process.col.id')"></th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('process.col.start')"></th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('process.col.end')"></th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('process.col.japanese')"></th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('process.col.chinese')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.id')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.start')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.end')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.japanese')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.chinese')"></th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100">
+          <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
             <template x-for="seg in segments" :key="seg.id">
-              <tr class="hover:bg-gray-50">
-                <td class="px-3 py-2 text-gray-600" x-text="seg.id"></td>
-                <td class="px-3 py-2 text-gray-600" x-text="seg.start.toFixed(2)"></td>
-                <td class="px-3 py-2 text-gray-600" x-text="seg.end.toFixed(2)"></td>
-                <td class="px-3 py-2 text-gray-800 max-w-md" x-text="seg.original_text"></td>
-                <td class="px-3 py-2 text-gray-800 max-w-md" x-text="seg.translated_text"></td>
+              <tr class="hover:bg-gray-50 dark:hover:bg-gray-900">
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400" x-text="seg.id"></td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400" x-text="seg.start.toFixed(2)"></td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400" x-text="seg.end.toFixed(2)"></td>
+                <td class="px-3 py-2 text-gray-800 dark:text-gray-100 max-w-md" x-text="seg.original_text"></td>
+                <td class="px-3 py-2 text-gray-800 dark:text-gray-100 max-w-md" x-text="seg.translated_text"></td>
               </tr>
             </template>
           </tbody>
         </table>
       </div>
-    </div>
-
-  </div>
-
-  <!-- ================================================================ -->
-  <!-- TRANSCRIBE TAB                                                    -->
-  <!-- ================================================================ -->
-  <div x-show="activeTab === 'transcribe'" x-data="transcribeTab()" x-cloak>
-
-    <form @submit.prevent="start" enctype="multipart/form-data"
-          class="mb-6 p-6 bg-white rounded-lg border border-gray-200 shadow-sm">
-      <label class="block text-sm font-medium text-gray-700 mb-2" x-text="$store.i18n.t('transcribe.upload_label')"></label>
-      <div class="flex items-center gap-3">
-        <input type="file" name="file" accept="audio/*" required
-               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4
-                      file:rounded-md file:border-0 file:text-sm file:font-medium
-                      file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100
-                      cursor-pointer" :disabled="uploading">
-        <button type="submit"
-                class="shrink-0 px-6 py-2 bg-blue-600 text-white rounded-md text-sm font-medium
-                       hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
-                       transition-colors cursor-pointer"
-                :disabled="uploading">
-          <span x-show="!uploading" x-text="$store.i18n.t('transcribe.button')"></span>
-          <span x-show="uploading" class="inline-flex items-center gap-1">
-            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            <span x-text="$store.i18n.t('transcribe.uploading')"></span>
-          </span>
-        </button>
-      </div>
-    </form>
-
-    <p class="text-xs text-gray-400 mb-4" x-text="$store.i18n.t('transcribe.hint')"></p>
-
-    <!-- Pipeline flow diagram -->
-    <div class="mb-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
-      <div class="flex items-center gap-2 flex-wrap">
-        <template x-for="(stage, i) in stages" :key="stage.id">
-          <div class="flex items-center gap-2">
-            <div class="flex items-center gap-2 px-3 py-2 rounded-lg border-2 min-w-[110px] transition-all duration-300"
-                 :class="{
-                   'border-gray-200 bg-gray-50': stage.status === 'pending',
-                   'border-blue-500 bg-blue-50 stage-running': stage.status === 'running',
-                   'border-green-500 bg-green-50': stage.status === 'completed',
-                   'border-red-500 bg-red-50': stage.status === 'error',
-                 }">
-              <svg class="w-5 h-5 shrink-0"
-                   :class="{
-                     'text-gray-400': stage.status === 'pending',
-                     'text-blue-600': stage.status === 'running',
-                     'text-green-600': stage.status === 'completed',
-                     'text-red-600': stage.status === 'error',
-                   }">
-                <use :href="'#icon-' + stage.icon"></use>
-              </svg>
-              <div>
-                <div class="font-semibold text-xs"
-                     :class="{
-                       'text-gray-500': stage.status === 'pending',
-                       'text-blue-700': stage.status === 'running',
-                       'text-green-700': stage.status === 'completed',
-                       'text-red-700': stage.status === 'error',
-                     }" x-text="stageName(stage)"></div>
-                <div class="text-[11px]"
-                     :class="{
-                       'text-gray-400': stage.status === 'pending',
-                       'text-blue-500': stage.status === 'running',
-                       'text-green-600': stage.status === 'completed',
-                       'text-red-500': stage.status === 'error',
-                     }" x-text="stageDesc(stage)"></div>
-              </div>
-              <svg x-show="stage.status === 'running'" class="animate-spin w-4 h-4 text-blue-600 shrink-0"><use href="#icon-spinner"></use></svg>
-              <svg x-show="stage.status === 'completed'" class="w-4 h-4 text-green-600 shrink-0"><use href="#icon-check-circle"></use></svg>
-              <svg x-show="stage.status === 'error'" class="w-4 h-4 text-red-600 shrink-0"><use href="#icon-x-circle"></use></svg>
-            </div>
-            <span x-show="i < stages.length - 1" class="text-gray-300 text-xl font-light">›</span>
-          </div>
-        </template>
-      </div>
-    </div>
-
-    <!-- Info / Error -->
-    <div x-show="infoText && !error" class="mb-4 p-3 bg-blue-50 text-blue-700 rounded-md text-sm"
-         x-text="infoText"></div>
-    <div x-show="error" class="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm whitespace-pre-line" x-text="error"></div>
-
-    <!-- Transcription table -->
-    <div x-show="segments.length" class="overflow-x-auto bg-white rounded-lg border border-gray-200 shadow-sm" x-transition>
-      <table class="w-full text-sm">
-        <thead class="bg-gray-50 border-b border-gray-200">
-          <tr>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('transcribe.col.id')"></th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('transcribe.col.start')"></th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('transcribe.col.end')"></th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="$store.i18n.t('transcribe.col.text')"></th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          <template x-for="seg in segments" :key="seg.id">
-            <tr class="hover:bg-gray-50">
-              <td class="px-3 py-2 text-gray-600" x-text="seg.id"></td>
-              <td class="px-3 py-2 text-gray-600" x-text="seg.start?.toFixed(2)"></td>
-              <td class="px-3 py-2 text-gray-600" x-text="seg.end?.toFixed(2)"></td>
-              <td class="px-3 py-2 text-gray-800 max-w-xl" x-text="seg.text"></td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
     </div>
 
   </div>
@@ -368,23 +312,23 @@ document.addEventListener('alpine:init', () => {
     <!-- Settings subtab navigation -->
     <nav class="flex gap-2 mb-4 flex-wrap">
       <button @click="subtab = 'asr'" type="button"
-              :class="subtab === 'asr' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              :class="subtab === 'asr' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
               class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
               x-text="$store.i18n.t('subtab.asr')"></button>
       <button @click="subtab = 'translator'" type="button"
-              :class="subtab === 'translator' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              :class="subtab === 'translator' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
               class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
               x-text="$store.i18n.t('subtab.translator')"></button>
       <button @click="subtab = 'tts'" type="button"
-              :class="subtab === 'tts' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              :class="subtab === 'tts' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
               class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
               x-text="$store.i18n.t('subtab.tts')"></button>
       <button @click="subtab = 'mixing'" type="button"
-              :class="subtab === 'mixing' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              :class="subtab === 'mixing' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
               class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
               x-text="$store.i18n.t('subtab.mixing')"></button>
       <button @click="subtab = 'output'" type="button"
-              :class="subtab === 'output' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              :class="subtab === 'output' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
               class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
               x-text="$store.i18n.t('subtab.output')"></button>
     </nav>
@@ -393,22 +337,22 @@ document.addEventListener('alpine:init', () => {
     <div x-show="subtab === 'asr'" class="max-w-2xl space-y-4">
 
         <!-- ASR Settings -->
-        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
           <button @click="asrOpen = !asrOpen" type="button"
-                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('asr.title')"></span>
-            <svg :class="asrOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('asr.title')"></span>
+            <svg :class="asrOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="asrOpen" class="px-4 py-3 space-y-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.backend')"></label>
-              <select x-model="s.asr_backend" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('asr.backend')"></label>
+              <select x-model="s.asr_backend" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 {% for b in asr_backends %}<option value="{{ b.value }}">{{ b.label }}</option>{% endfor %}
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.device')"></label>
-              <select x-model="s.whisper_device" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('asr.device')"></label>
+              <select x-model="s.whisper_device" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                 <option value="cpu">cpu</option><option value="cuda">cuda</option>
               </select>
             </div>
@@ -416,28 +360,28 @@ document.addEventListener('alpine:init', () => {
             <template x-if="s.asr_backend === 'faster-whisper'">
               <div class="space-y-3">
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.whisper_model')"></label>
-                  <select x-model="s.whisper_model" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('asr.whisper_model')"></label>
+                  <select x-model="s.whisper_model" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                     {% for m in whisper_models %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
                   </select>
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.compute_type')"></label>
-                  <input x-model="s.whisper_compute_type" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="int8">
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('asr.compute_type')"></label>
+                  <input x-model="s.whisper_compute_type" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="int8">
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.language')"></label>
-                  <input x-model="s.whisper_language" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="ja">
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('asr.language')"></label>
+                  <input x-model="s.whisper_language" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="ja">
                 </div>
                 <div class="flex gap-4">
                   <div class="flex-1">
-                    <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.beam_size')"></label>
-                    <input x-model.number="s.whisper_beam_size" type="number" min="1" max="20" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('asr.beam_size')"></label>
+                    <input x-model.number="s.whisper_beam_size" type="number" min="1" max="20" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                   </div>
                   <div class="flex items-end pb-1">
                     <label class="flex items-center gap-1.5 text-sm cursor-pointer">
-                      <input x-model="s.whisper_vad_filter" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                      <span x-text="$store.i18n.t('asr.vad')"></span>
+                      <input x-model="s.whisper_vad_filter" type="checkbox" class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-900 text-blue-600 dark:text-blue-400 focus:ring-blue-500">
+                      <span class="text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('asr.vad')"></span>
                     </label>
                   </div>
                 </div>
@@ -447,14 +391,14 @@ document.addEventListener('alpine:init', () => {
             <template x-if="s.asr_backend === 'kotoba-whisper'">
               <div class="space-y-3">
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.kotoba_model')"></label>
-                  <select x-model="s.kotoba_whisper_model" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('asr.kotoba_model')"></label>
+                  <select x-model="s.kotoba_whisper_model" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                     {% for m in kotoba_models %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
                   </select>
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('asr.chunk_length')"></label>
-                  <input x-model.number="s.kotoba_whisper_chunk_length_s" type="number" min="5" max="60" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('asr.chunk_length')"></label>
+                  <input x-model.number="s.kotoba_whisper_chunk_length_s" type="number" min="5" max="60" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                 </div>
               </div>
             </template>
@@ -467,43 +411,57 @@ document.addEventListener('alpine:init', () => {
     <div x-show="subtab === 'translator'" class="max-w-2xl space-y-4">
 
         <!-- Translation Settings -->
-        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
           <button @click="transOpen = !transOpen" type="button"
-                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('trans.title')"></span>
-            <svg :class="transOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('trans.title')"></span>
+            <svg :class="transOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="transOpen" class="px-4 py-3 space-y-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.backend')"></label>
-              <select x-model="s.translation_backend" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('trans.backend')"></label>
+              <select x-model="s.translation_backend" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                 {% for b in translation_backends %}<option value="{{ b.value }}">{{ b.label }}</option>{% endfor %}
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.api_key')"></label>
-              <input x-model="s.openai_api_key" type="password" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="sk-...">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.base_url')"></label>
-              <input x-model="s.openai_base_url" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="https://api.openai.com/v1">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.model')"></label>
-              <input x-model="s.openai_model" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="gpt-4o-mini">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.prompt')"></label>
-              <textarea x-model="s.translation_prompt" rows="4" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('trans.prompt_ph')"></textarea>
-              <p class="text-[11px] text-gray-400 mt-0.5" x-text="$store.i18n.t('trans.prompt_hint')"></p>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('trans.batch')"></label>
-              <div class="flex items-center gap-2">
-                <input x-model.number="s.translation_batch_size" type="range" min="1" max="50" class="flex-1">
-                <span class="text-xs text-gray-500 w-8 text-right" x-text="s.translation_batch_size"></span>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('trans.api_key')"></label>
+              <div class="relative">
+                <input x-model="s.openai_api_key" :type="showKey ? 'text' : 'password'" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm pr-10" placeholder="sk-...">
+                <button @click="showKey = !showKey" type="button" class="absolute inset-y-0 right-0 flex items-center pr-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :title="showKey ? 'hide' : 'show'">
+                  <svg x-show="!showKey" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                  <svg x-show="showKey" x-cloak class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+                </button>
               </div>
-              <p class="text-[11px] text-gray-400 mt-0.5" x-text="$store.i18n.t('trans.batch_hint')"></p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('trans.base_url')"></label>
+              <input x-model="s.openai_base_url" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="https://api.deepseek.com">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('trans.model')"></label>
+              <input x-model="s.openai_model" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="deepseek-v4-flash">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('trans.prompt')"></label>
+              <textarea x-model="s.translation_prompt" rows="4" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('trans.prompt_ph')"></textarea>
+              <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5" x-text="$store.i18n.t('trans.prompt_hint')"></p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('trans.batch')"></label>
+              <div class="flex items-center gap-2">
+                <input x-model.number="s.translation_batch_size" type="range" min="1" max="50" class="flex-1 dark:accent-blue-500">
+                <span class="text-xs text-gray-500 dark:text-gray-400 w-8 text-right" x-text="s.translation_batch_size"></span>
+              </div>
+              <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5" x-text="$store.i18n.t('trans.batch_hint')"></p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('trans.concurrency')"></label>
+              <div class="flex items-center gap-2">
+                <input x-model.number="s.translation_max_concurrency" type="range" min="1" max="16" class="flex-1 dark:accent-blue-500">
+                <span class="text-xs text-gray-500 dark:text-gray-400 w-8 text-right" x-text="s.translation_max_concurrency"></span>
+              </div>
+              <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5" x-text="$store.i18n.t('trans.concurrency_hint')"></p>
             </div>
           </div>
         </section>
@@ -514,16 +472,16 @@ document.addEventListener('alpine:init', () => {
     <div x-show="subtab === 'tts'" class="max-w-2xl space-y-4">
 
         <!-- TTS Settings -->
-        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
           <button @click="ttsOpen = !ttsOpen" type="button"
-                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('tts.title')"></span>
-            <svg :class="ttsOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('tts.title')"></span>
+            <svg :class="ttsOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="ttsOpen" class="px-4 py-3 space-y-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.backend')"></label>
-              <select x-model="s.tts_backend" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.backend')"></label>
+              <select x-model="s.tts_backend" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                 {% for b in tts_backends %}<option value="{{ b.value }}">{{ b.label }}</option>{% endfor %}
               </select>
             </div>
@@ -531,8 +489,8 @@ document.addEventListener('alpine:init', () => {
             <template x-if="s.tts_backend === 'edge-tts'">
               <div class="space-y-3">
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.voice')"></label>
-                  <select x-model="s.chinese_voice" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.voice')"></label>
+                  <select x-model="s.chinese_voice" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                     <template x-for="v in voices" :key="v">
                       <option :value="v" x-text="v + ' (' + $store.i18n.t('voice.' + v) + ')'"></option>
                     </template>
@@ -540,16 +498,16 @@ document.addEventListener('alpine:init', () => {
                 </div>
                 <div class="grid grid-cols-3 gap-3">
                   <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.rate')"></label>
-                    <input x-model="s.tts_rate" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="+0%">
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.rate')"></label>
+                    <input x-model="s.tts_rate" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="+0%">
                   </div>
                   <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.volume')"></label>
-                    <input x-model="s.tts_volume" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="+0%">
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.volume')"></label>
+                    <input x-model="s.tts_volume" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="+0%">
                   </div>
                   <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.pitch')"></label>
-                    <input x-model="s.tts_pitch" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="+0Hz">
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.pitch')"></label>
+                    <input x-model="s.tts_pitch" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="+0Hz">
                   </div>
                 </div>
               </div>
@@ -558,16 +516,26 @@ document.addEventListener('alpine:init', () => {
             <template x-if="s.tts_backend === 'indextts'">
               <div class="space-y-3">
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.reference_audio')"></label>
-                  <input x-model="s.indextts_reference_audio" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.ref_audio_ph')">
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.reference_select')"></label>
+                  <select x-model="refPicker" @change="s.indextts_reference_audio = refPicker ? 'references/' + refPicker : ''"
+                          class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
+                    <option value="" x-text="$store.i18n.t('tts.reference_placeholder')"></option>
+                    <template x-for="f in references" :key="f">
+                      <option :value="f" x-text="f"></option>
+                    </template>
+                  </select>
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.model_dir')"></label>
-                  <input x-model="s.indextts_model_dir" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.model_dir_ph')">
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.reference_audio')"></label>
+                  <input x-model="s.indextts_reference_audio" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.ref_audio_ph')">
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('tts.language')"></label>
-                  <input x-model="s.indextts_language" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="zh">
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.model_dir')"></label>
+                  <input x-model="s.indextts_model_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.model_dir_ph')">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.language')"></label>
+                  <input x-model="s.indextts_language" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="zh">
                 </div>
               </div>
             </template>
@@ -580,72 +548,72 @@ document.addEventListener('alpine:init', () => {
     <div x-show="subtab === 'mixing'" class="max-w-2xl space-y-4">
 
         <!-- Mixing Settings -->
-        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
           <button @click="mixOpen = !mixOpen" type="button"
-                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('mix.title')"></span>
-            <svg :class="mixOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('mix.title')"></span>
+            <svg :class="mixOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="mixOpen" class="px-4 py-3 space-y-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('mix.mode')"></label>
-              <select x-model="s.mix_mode" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('mix.mode')"></label>
+              <select x-model="s.mix_mode" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                 {% for m in mix_modes %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
               </select>
-              <p class="text-[11px] text-gray-400 mt-1" x-text="mixModeDesc(s.mix_mode)"></p>
+              <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-1" x-text="mixModeDesc(s.mix_mode)"></p>
             </div>
             <div class="space-y-2">
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1"><span x-text="$store.i18n.t('mix.overlay_vol')"></span>: <span x-text="s.overlay_volume_db"></span> dB</label>
-                <input x-model.number="s.overlay_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"><span x-text="$store.i18n.t('mix.overlay_vol')"></span>: <span x-text="s.overlay_volume_db"></span> dB</label>
+                <input x-model.number="s.overlay_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full dark:accent-blue-500">
               </div>
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1"><span x-text="$store.i18n.t('mix.whisper_vol')"></span>: <span x-text="s.whisper_volume_db"></span> dB</label>
-                <input x-model.number="s.whisper_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"><span x-text="$store.i18n.t('mix.whisper_vol')"></span>: <span x-text="s.whisper_volume_db"></span> dB</label>
+                <input x-model.number="s.whisper_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full dark:accent-blue-500">
               </div>
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1"><span x-text="$store.i18n.t('mix.spatial_cross')"></span>: <span x-text="s.spatial_cross_db"></span> dB</label>
-                <input x-model.number="s.spatial_cross_db" type="range" min="-30" max="0" step="0.5" class="w-full">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"><span x-text="$store.i18n.t('mix.spatial_cross')"></span>: <span x-text="s.spatial_cross_db"></span> dB</label>
+                <input x-model.number="s.spatial_cross_db" type="range" min="-30" max="0" step="0.5" class="w-full dark:accent-blue-500">
               </div>
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('mix.seq_gap')"></label>
-                <input x-model.number="s.sequential_gap_ms" type="number" min="0" max="5000" step="100" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('mix.seq_gap')"></label>
+                <input x-model.number="s.sequential_gap_ms" type="number" min="0" max="5000" step="100" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
               </div>
             </div>
           </div>
         </section>
 
         <!-- Vocal Separation -->
-        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
           <button @click="sepOpen = !sepOpen" type="button"
-                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('sep.title')"></span>
-            <svg :class="sepOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('sep.title')"></span>
+            <svg :class="sepOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="sepOpen" class="px-4 py-3 space-y-3">
             <label class="flex items-center gap-2 text-sm cursor-pointer">
-              <input x-model="s.separate_vocals" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-              <span class="text-gray-700" x-text="$store.i18n.t('sep.enable')"></span>
+              <input x-model="s.separate_vocals" type="checkbox" class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-900 text-blue-600 dark:text-blue-400 focus:ring-blue-500">
+              <span class="text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('sep.enable')"></span>
             </label>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('sep.model')"></label>
-              <select x-model="s.demucs_model" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('sep.model')"></label>
+              <select x-model="s.demucs_model" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                 {% for m in demucs_models %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('sep.device')"></label>
-              <select x-model="s.demucs_device" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('sep.device')"></label>
+              <select x-model="s.demucs_device" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                 <option value="cpu">cpu</option><option value="cuda">cuda</option>
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1"><span x-text="$store.i18n.t('sep.vocals_vol')"></span>: <span x-text="s.vocals_volume_db"></span> dB</label>
-              <input x-model.number="s.vocals_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"><span x-text="$store.i18n.t('sep.vocals_vol')"></span>: <span x-text="s.vocals_volume_db"></span> dB</label>
+              <input x-model.number="s.vocals_volume_db" type="range" min="-30" max="0" step="0.5" class="w-full dark:accent-blue-500">
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1"><span x-text="$store.i18n.t('sep.bg_vol')"></span>: <span x-text="s.background_volume_db"></span> dB</label>
-              <input x-model.number="s.background_volume_db" type="range" min="-30" max="10" step="0.5" class="w-full">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"><span x-text="$store.i18n.t('sep.bg_vol')"></span>: <span x-text="s.background_volume_db"></span> dB</label>
+              <input x-model.number="s.background_volume_db" type="range" min="-30" max="10" step="0.5" class="w-full dark:accent-blue-500">
             </div>
           </div>
         </section>
@@ -656,44 +624,70 @@ document.addEventListener('alpine:init', () => {
     <div x-show="subtab === 'output'" class="max-w-2xl space-y-4">
 
         <!-- Output Settings -->
-        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
           <button @click="outOpen = !outOpen" type="button"
-                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('out.title')"></span>
-            <svg :class="outOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('out.title')"></span>
+            <svg :class="outOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="outOpen" class="px-4 py-3 space-y-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('out.format')"></label>
-              <select x-model="s.output_format" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('out.format')"></label>
+              <select x-model="s.output_format" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                 {% for f in output_formats %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('out.bitrate')"></label>
-              <select x-model="s.output_bitrate" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('out.bitrate')"></label>
+              <select x-model="s.output_bitrate" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                 {% for b in bitrates %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('out.sample_rate')"></label>
-              <input x-model.number="s.output_sample_rate" type="number" min="8000" max="192000" step="1000" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('out.sample_rate')"></label>
+              <input x-model.number="s.output_sample_rate" type="number" min="8000" max="192000" step="1000" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
             </div>
           </div>
         </section>
 
         <!-- Paths -->
-        <section class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
           <button @click="pathOpen = !pathOpen" type="button"
-                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-            <span class="text-sm font-medium text-gray-700" x-text="$store.i18n.t('out.paths')"></span>
-            <svg :class="pathOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('out.paths')"></span>
+            <svg :class="pathOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
-          <div x-show="pathOpen" class="px-4 py-3">
+          <div x-show="pathOpen" class="px-4 py-3 space-y-3">
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1" x-text="$store.i18n.t('out.temp_dir')"></label>
-              <input x-model="s.temp_dir" type="text" class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm" placeholder="/tmp/kakure">
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('out.temp_dir')"></label>
+              <input x-model="s.temp_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="tmp">
             </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('out.srt_dir')"></label>
+              <input x-model="s.srt_output_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('out.srt_dir_ph')">
+              <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5" x-text="$store.i18n.t('out.srt_dir_hint')"></p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Checkpoints -->
+        <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+          <button @click="ckptOpen = !ckptOpen" type="button"
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('ckpt.title')"></span>
+            <svg :class="ckptOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div x-show="ckptOpen" class="px-4 py-3 space-y-3">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input x-model="s.enable_checkpoints" type="checkbox" class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-900 text-blue-600 dark:text-blue-400 focus:ring-blue-500">
+              <span class="text-sm text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('ckpt.enable')"></span>
+            </label>
+            <p class="text-[11px] text-gray-400 dark:text-gray-500" x-text="$store.i18n.t('ckpt.hint')"></p>
+            <button @click="clearCheckpoints" type="button"
+                    class="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-md text-xs font-medium
+                           hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                    x-text="$store.i18n.t('ckpt.clear')"></button>
+            <span class="block text-xs text-gray-500 dark:text-gray-400" x-text="ckptStatus"></span>
           </div>
         </section>
 
@@ -711,16 +705,36 @@ document.addEventListener('alpine:init', () => {
           <span x-text="$store.i18n.t('save.saving')"></span>
         </span>
       </button>
-      <button @click="reset" type="button"
-              class="px-6 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium
-                     hover:bg-gray-50 transition-colors cursor-pointer"
+      <button @click="resetConfirm = true" type="button"
+              class="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-md text-sm font-medium
+                     hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
               x-text="$store.i18n.t('reset.button')"></button>
       <span class="inline-flex items-center gap-1 text-sm"
-            :class="saveStatus.includes($store.i18n.t('save.error_prefix')) ? 'text-red-600' : 'text-green-600'">
+            :class="saveStatus.includes($store.i18n.t('save.error_prefix')) ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'">
         <svg x-show="saveStatus && !saveStatus.includes($store.i18n.t('save.error_prefix'))" class="w-4 h-4 shrink-0"><use href="#icon-check-circle"></use></svg>
         <svg x-show="saveStatus && saveStatus.includes($store.i18n.t('save.error_prefix'))" class="w-4 h-4 shrink-0"><use href="#icon-x-circle"></use></svg>
         <span x-text="saveStatus"></span>
       </span>
+    </div>
+
+    <!-- Reset confirmation modal -->
+    <div x-show="resetConfirm" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+         @keydown.escape.window="resetConfirm = false"
+         @click.self="resetConfirm = false">
+      <div class="w-full max-w-md rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl p-6"
+           x-transition.opacity>
+        <h3 class="text-base font-semibold text-gray-800 dark:text-gray-100" x-text="$store.i18n.t('reset.confirm_title')"></h3>
+        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400" x-text="$store.i18n.t('reset.confirm_msg')"></p>
+        <div class="mt-6 flex justify-end gap-3">
+          <button @click="resetConfirm = false" type="button"
+                  class="px-4 py-2 rounded-md text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                  x-text="$store.i18n.t('reset.cancel')"></button>
+          <button @click="reset(); resetConfirm = false" type="button"
+                  class="px-4 py-2 rounded-md text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors cursor-pointer"
+                  x-text="$store.i18n.t('reset.confirm')"></button>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -741,8 +755,10 @@ function processTab() {
     result: null,
     segments: [],
     uploading: false,
+    elapsed: 0,
     _stageOrder: null,
     _es: null,
+    _timer: null,
 
     init() {
       this._stageOrder = this.stages.map(s => s.id);
@@ -751,9 +767,22 @@ function processTab() {
     stageName(stage) { return this.$store.i18n.t('stage.' + stage.id + '.name'); },
     stageDesc(stage) { return this.$store.i18n.t('stage.' + stage.id + '.desc'); },
 
+    formatElapsed() {
+      const s = Math.floor(this.elapsed);
+      const h = Math.floor(s / 3600);
+      const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+      const sec = String(s % 60).padStart(2, '0');
+      return h > 0 ? h + ':' + m + ':' + sec : m + ':' + sec;
+    },
+
+    _stopTimer() {
+      if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    },
+
     async start(event) {
       this.uploading = true; this.error = null; this.completed = false;
       this.result = null; this.segments = [];
+      this.elapsed = 0;
       this.stages = this.stages.map(s => ({...s, status: 'pending'}));
       this.statusMessage = '';
       const formData = new FormData(event.target);
@@ -771,10 +800,13 @@ function processTab() {
       if (this._es) this._es.close();
       const es = new EventSource('/api/process/' + this.jobId);
       this._es = es;
+      this.elapsed = 0;
+      this._timer = setInterval(() => { this.elapsed++; }, 1000);
       es.onmessage = (e) => {
         const d = JSON.parse(e.data);
         if (d.type === 'heartbeat') return;
         if (d.type === 'progress') {
+          if (d.cached && !d.message) d.message = this.$store.i18n.t('stage.cached');
           this.stages = this.stages.map(s => {
             if (s.id === d.stage) return {...s, status: d.status, message: d.message || ''};
             if (d.status === 'completed' && this._stageOrder.indexOf(s.id) < this._stageOrder.indexOf(d.stage)) return {...s, status: 'completed'};
@@ -782,76 +814,15 @@ function processTab() {
           });
           if (d.message) this.statusMessage = d.message;
         }
-        if (d.type === 'finished') { this.completed = true; this.result = d; this.segments = d.segments || []; this.statusMessage = ''; es.close(); }
+        if (d.type === 'finished') { this.completed = true; this.result = d; this.segments = d.segments || []; this.statusMessage = ''; this._stopTimer(); es.close(); }
         if (d.type === 'error') {
           this.error = d.message;
           this.stages = this.stages.map(s => s.id === d.stage ? {...s, status: 'error'} : s);
+          this._stopTimer();
           es.close();
         }
       };
-      es.onerror = () => { if (!this.completed && !this.error) this.error = this.$store.i18n.t('error.lost_connection'); es.close(); };
-    }
-  };
-}
-
-function transcribeTab() {
-  return {
-    jobId: null,
-    stages: {{ transcribe_stages_json | safe }}.map(s => ({...s, status: 'pending'})),
-    infoText: '',
-    error: null,
-    segments: [],
-    uploading: false,
-    _stageOrder: null,
-    _es: null,
-
-    init() { this._stageOrder = this.stages.map(s => s.id); },
-
-    stageName(stage) { return this.$store.i18n.t('stage.' + stage.id + '.name'); },
-    stageDesc(stage) { return this.$store.i18n.t('stage.' + stage.id + '.desc'); },
-
-    async start(event) {
-      this.uploading = true; this.error = null; this.segments = [];
-      this.stages = this.stages.map(s => ({...s, status: 'pending'}));
-      this.infoText = '';
-      const formData = new FormData(event.target);
-      try {
-        const res = await fetch('/api/transcribe', { method: 'POST', body: formData });
-        if (!res.ok) throw new Error((await res.json()).detail || this.$store.i18n.t('error.upload_failed'));
-        const { job_id } = await res.json();
-        this.jobId = job_id;
-      } catch (e) { this.error = e.message; this.uploading = false; return; }
-      this.uploading = false;
-      this.connectSSE();
-    },
-
-    connectSSE() {
-      if (this._es) this._es.close();
-      const es = new EventSource('/api/transcribe/' + this.jobId);
-      this._es = es;
-      es.onmessage = (e) => {
-        const d = JSON.parse(e.data);
-        if (d.type === 'heartbeat') return;
-        if (d.type === 'progress') {
-          this.stages = this.stages.map(s => {
-            if (s.id === d.stage) return {...s, status: d.status};
-            if (d.status === 'completed' && this._stageOrder.indexOf(s.id) < this._stageOrder.indexOf(d.stage)) return {...s, status: 'completed'};
-            return s;
-          });
-        }
-        if (d.type === 'finished') {
-          this.segments = d.segments || [];
-          this.infoText = this.$store.i18n.t('transcribe.info', {
-            lang: d.language,
-            pct: (d.language_probability * 100).toFixed(0),
-            dur: d.duration?.toFixed(1),
-            count: d.segments?.length || 0
-          });
-          es.close();
-        }
-        if (d.type === 'error') { this.error = d.message; es.close(); }
-      };
-      es.onerror = () => { if (!this.error) this.error = this.$store.i18n.t('error.lost_connection'); es.close(); };
+      es.onerror = () => { this._stopTimer(); if (!this.completed && !this.error) this.error = this.$store.i18n.t('error.lost_connection'); es.close(); };
     }
   };
 }
@@ -860,11 +831,21 @@ function settingsTab() {
   return {
     s: {{ settings_json | safe }},
     voices: {{ chinese_voices_json | safe }},
+    references: {{ references_audio_json | safe }},
+    refPicker: '',
     subtab: 'asr',
     asrOpen: true, transOpen: true, ttsOpen: true,
-    mixOpen: true, sepOpen: true, outOpen: true, pathOpen: true,
+    showKey: false,
+    mixOpen: true, sepOpen: true, outOpen: true, pathOpen: true, ckptOpen: false,
     saving: false, saveStatus: '',
+    resetConfirm: false,
+    ckptStatus: '',
     mixModeDesc(v) { return this.$store.i18n.t('mix_mode.' + v); },
+
+    init() {
+      const m = /^references[\\/](.+)$/.exec(this.s.indextts_reference_audio || '');
+      if (m && this.references.includes(m[1])) this.refPicker = m[1];
+    },
 
     async save() {
       this.saving = true; this.saveStatus = '';
@@ -893,6 +874,16 @@ function settingsTab() {
         this.s = data.settings;
         this.saveStatus = this.$store.i18n.t('save.reset_ok');
       } catch (e) { this.saveStatus = errPrefix + e.message; }
+    },
+
+    async clearCheckpoints() {
+      this.ckptStatus = '';
+      try {
+        const res = await fetch('/api/checkpoints/clear', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) this.ckptStatus = (data.cleared ?? 0) + ' ' + this.$store.i18n.t('ckpt.cleared');
+        else this.ckptStatus = this.$store.i18n.t('ckpt.clear_failed');
+      } catch (e) { this.ckptStatus = this.$store.i18n.t('ckpt.clear_failed'); }
     }
   };
 }

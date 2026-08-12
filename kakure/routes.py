@@ -24,6 +24,9 @@ from kakure.config import (
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_REFERENCE_DIR = _PROJECT_ROOT / "references"
+_REFERENCE_EXTS = {".wav", ".mp3", ".flac", ".m4a", ".ogg"}
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 router = APIRouter()
@@ -31,7 +34,26 @@ router = APIRouter()
 
 @router.get("/static/i18n.js")
 async def i18n_js():
-    return FileResponse(_STATIC_DIR / "i18n.js", media_type="text/javascript")
+    return FileResponse(
+        _STATIC_DIR / "i18n.js",
+        media_type="text/javascript",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/static/vendor/{filename}")
+async def vendor_js(filename: str):
+    vendor_dir = (_STATIC_DIR / "vendor").resolve()
+    target = (vendor_dir / filename).resolve()
+    if vendor_dir not in target.parents or not target.is_file():
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(
+        target,
+        media_type="text/javascript",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def _enum_options(enum_cls) -> list[dict]:
@@ -46,9 +68,23 @@ def _mix_mode_options() -> list[dict]:
     return [{"value": m.value, "label": m.value} for m in MixMode]
 
 
+def _reference_audio_options() -> list[str]:
+    """List audio files available in the project-root references/ folder."""
+    if not _REFERENCE_DIR.is_dir():
+        return []
+    return sorted(
+        p.name
+        for p in _REFERENCE_DIR.iterdir()
+        if p.is_file() and p.suffix.lower() in _REFERENCE_EXTS
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     settings = load_settings()
+
+    # Cache-buster for static assets: any change to the file changes the URL.
+    i18n_version = _STATIC_DIR.joinpath("i18n.js").stat().st_mtime_ns
 
     pipeline_stages = [
         {"id": "asr", "icon": "microphone"},
@@ -59,18 +95,14 @@ async def index(request: Request):
         {"id": "export", "icon": "arrow-down-tray"},
     ]
 
-    transcribe_stages = [
-        {"id": "load", "icon": "archive-box"},
-        {"id": "transcribe", "icon": "microphone"},
-    ]
-
     ctx = {
         "request": request,
+        "i18n_version": i18n_version,
         "settings_json": json.dumps(_settings_to_dict(settings)),
         "pipeline_stages_json": json.dumps(pipeline_stages),
-        "transcribe_stages_json": json.dumps(transcribe_stages),
         "mix_modes": _mix_mode_options(),
         "chinese_voices_json": json.dumps(_voice_options()),
+        "references_audio_json": json.dumps(_reference_audio_options()),
         "asr_backends": _enum_options(ASRBackend),
         "whisper_models": _enum_options(WhisperModelSize),
         "kotoba_models": _enum_options(KotobaWhisperModel),
