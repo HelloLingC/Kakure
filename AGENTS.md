@@ -11,7 +11,9 @@ Kakure is a web-based tool that translates Japanese ASMR voice audio into biling
 Non-technical Windows users should double-click `install.bat`. It auto-installs Python 3.12
 if needed, then delegates the rest to `install.py` (stdlib-only, in the repo root), which
 creates `.venv`, upgrades pip, installs deps with optional Tsinghua mirror, downloads
-portable ffmpeg to `bin\ffmpeg`, and generates `kakure.toml`. Users then double-click
+a shared (DLL) ffmpeg 8.1.2 build to `bin\ffmpeg` and registers its DLL directory for
+torchcodec via a venv `.pth` (`os.add_dll_directory`), and generates `kakure.toml`. Users
+then double-click
 `start-kakure.bat` to launch (or accept the launch prompt at the end of the installer).
 Batch files are ASCII + CRLF (no BOM), first line `@echo off` and second `chcp 936 >nul`
 (retained for Windows Terminal compatibility); because the messages are pure ASCII, the
@@ -75,7 +77,7 @@ Single-package layout: `kakure/` with these modules:
 
 | Module | Responsibility |
 |---|---|
-| `config.py` | Pydantic `Settings` model with TOML load/save (`load_settings`, `save_settings`, `get_settings`). All enums (ASRBackend, MixMode, TranslationBackend, WhisperModelSize, KotobaWhisperModel, ChineseVoice, TTSBackend, DemucsModel) |
+| `config.py` | Pydantic `Settings` model with TOML load/save (`load_settings`, `save_settings`, `get_settings`). All enums (ASRBackend, MixMode, TranslationBackend, WhisperModelSize, KotobaWhisperModel, ChineseVoice, TTSBackend, DemucsModel). `apply_model_env()` routes all model downloads into `model_dir` (portable/整合包 mode) by setting `HF_HOME`/`HF_HUB_CACHE`/`TORCH_HOME` before any model library imports |
 | `asr.py` | `BaseASRProcessor` (ABC) → `ASRProcessor` (faster-whisper) or `KotobaWhisperProcessor` (HuggingFace Transformers). Factory: `create_asr_processor(settings)`. Returns `TranscriptionResult` with `Segment`/`Word` dataclasses |
 | `translator.py` | `Translator` → `OpenAITranslator` — lazy-inits backend, uses ASMR-specific system prompt. Splits segments into independent batches and dispatches them concurrently via `ThreadPoolExecutor` bounded by `translation_max_concurrency` (no rolling context) |
 | `tts.py` | `BaseTTSProcessor` (ABC) → `EdgeTTSProcessor` (cloud, async) or `IndexTTSProcessor` (local GPU, voice cloning). Factory: `create_tts_processor(settings)`. Returns `TTSResult` dataclasses |
@@ -86,7 +88,7 @@ Single-package layout: `kakure/` with these modules:
 | `api.py` | FastAPI application — REST endpoints (`/api/process`, `/api/settings`), SSE progress streaming, background job store. `_friendly_error()` maps common failures (missing ffmpeg, optional deps, OpenAI auth/network) to actionable messages shown in the UI. `/api/health` reports `ffmpeg` availability for the UI banner |
 | `routes.py` | Web UI routes — serves the SPA (`GET /`) with Jinja2 templates, passes enum options and settings as context |
 | `cli.py` | CLI entry point (`kakure` command) — launches uvicorn with configurable host/port/reload. Default host is `127.0.0.1`; auto-opens the browser unless `--no-browser` is passed |
-| `models.py` | Model management — catalog of Whisper (faster-whisper + kotoba-whisper) and IndexTTS model repos, install-status/size reporting from the HuggingFace Hub cache, background downloads with progress callbacks (`snapshot_download` + tqdm hook), and cache deletion |
+| `models.py` | Model management — catalog of Whisper (faster-whisper + kotoba-whisper) and IndexTTS model repos, install-status/size reporting from the HuggingFace Hub cache (resolved to `model_dir` when set), background downloads with progress callbacks (`snapshot_download` + tqdm hook), and cache deletion |
 | `templates/index.html` | Single-page web UI — HTMX+Alpine.js with Process, Settings, and Models tabs. Tailwind CSS via CDN. Alpine handles SSE progress streaming, file uploads, form state, and conditional field visibility. The Settings tab uses subtabs (ASR/Translator/TTS/Mixing/Output) with expanding cards. The Models tab lists cached/uncached models with Download/Delete and live progress bars |
 
 Data flow: `Segment` (asr) → `TranslatedSegment` (translator) → `dict` segments + `TTSResult` dicts (tts) → `MixInput` (mixer, optionally with `SeparatedAudio`) → `AudioSegment` → exported file.
@@ -135,7 +137,8 @@ Install: `pip install -e ".[demucs]"`. Model downloads ~2-6GB on first use.
 
 ## Key Gotchas
 
-- **Whisper model downloads on first run** — `large-v3` is ~3GB. Use `tiny` or `small` for quick testing.
+- **Whisper model downloads on first run** — `large-v3` is ~3GB. Use `tiny` or `small` for quick testing. By default all models go to the HuggingFace Hub cache (`~/.cache/huggingface`); set `model_dir` (e.g. `models`) in `kakure.toml` to keep every model file inside the project folder — required for a portable 整合包 build. `apply_model_env()` (called from `cli.py` and `api.py` startup) sets `HF_HOME`/`HF_HUB_CACHE`/`TORCH_HOME` accordingly.
+- **torchcodec needs a *shared* FFmpeg** — its `libtorchcodec_core*.dll` depends on `avcodec-*.dll` etc., which the Windows loader does not resolve from PATH (safe-DLL-search). The installer bundles FFmpeg 8.1.2 full-shared into `bin\ffmpeg\bin` and registers it for the venv via `os.add_dll_directory` in `.venv/Lib/site-packages/torchcodec_ffmpeg_path.pth`. A static `ffmpeg.exe` (e.g. choco's) is not enough, and FFmpeg 9 is too new for torchcodec 0.15.
 - **kotoba-whisper downloads on first run** — models are ~1.5GB, fetched from HuggingFace Hub.
 - **IndexTTS downloads on first run** — model is ~6GB, fetched from HuggingFace Hub. Requires NVIDIA GPU with CUDA.
 - **IndexTTS requires reference audio** — must upload a reference audio file in the web UI or set `indextts_reference_audio` in `kakure.toml` when using IndexTTS.

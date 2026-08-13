@@ -50,6 +50,13 @@ def main() -> None:
         logging.getLogger(__name__).info("Opening Kakure in your browser: %s", url)
         threading.Timer(1.25, webbrowser.open, args=(url,)).start()
 
+    # Route all model downloads into the project folder when model_dir is set
+    # (portable / integrated-package mode). Must run before any model library
+    # is imported, hence before uvicorn starts.
+    from kakure.config import apply_model_env, load_settings
+
+    apply_model_env(load_settings())
+
     import uvicorn
 
     uvicorn.run(

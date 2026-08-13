@@ -101,6 +101,13 @@ output_sample_rate = 44100
 # Kakure is launched)
 temp_dir = "tmp"
 
+# Unified directory for ALL model downloads (faster-whisper, kotoba-whisper,
+# IndexTTS, Demucs). Relative to the project root. Leave empty to use each
+# framework's default location (HuggingFace Hub cache, torch hub, ...).
+# Set this when packaging Kakure as a portable build (整合包) so every model
+# file stays inside the project folder.
+model_dir = ""
+
 # Directory for generated SRT subtitle files ({stem}_ja.srt, {stem}_zh.srt,
 # {stem}_bilingual.srt). Leave empty to write in the same directory as the
 # input file (temp_dir in the web UI, input file directory in the CLI).

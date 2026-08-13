@@ -50,6 +50,7 @@ STAGE_SETTING_KEYS: dict[str, list[str]] = {
         "whisper_language",
         "whisper_beam_size",
         "whisper_vad_filter",
+        "model_dir",
         "kotoba_whisper_model",
         "kotoba_whisper_chunk_length_s",
     ],
@@ -71,10 +72,12 @@ STAGE_SETTING_KEYS: dict[str, list[str]] = {
         "indextts_reference_audio",
         "indextts_model_dir",
         "indextts_language",
+        "model_dir",
     ],
     "separate": [
         "demucs_model",
         "demucs_device",
+        "model_dir",
     ],
 }
 

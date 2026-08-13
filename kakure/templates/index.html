@@ -724,6 +724,11 @@ document.addEventListener('alpine:init', () => {
               <input x-model="s.temp_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="tmp">
             </div>
             <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('out.model_dir')"></label>
+              <input x-model="s.model_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('out.model_dir_ph')">
+              <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5" x-text="$store.i18n.t('out.model_dir_hint')"></p>
+            </div>
+            <div>
               <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('out.srt_dir')"></label>
               <input x-model="s.srt_output_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('out.srt_dir_ph')">
               <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5" x-text="$store.i18n.t('out.srt_dir_hint')"></p>
@@ -811,6 +816,10 @@ document.addEventListener('alpine:init', () => {
         <p class="mt-1">
           <span x-text="$store.i18n.t('models.cache_dir')"></span>
           <code class="font-mono text-gray-500 dark:text-gray-400" x-text="cacheDir"></code>
+        </p>
+        <p class="mt-1">
+          <span x-text="$store.i18n.t('models.model_dir')"></span>
+          <code class="font-mono text-gray-500 dark:text-gray-400" x-text="modelDir || $store.i18n.t('models.model_dir_default')"></code>
         </p>
       </div>
       <div class="flex items-center gap-3 shrink-0">
@@ -1104,6 +1113,7 @@ function modelsTab() {
   return {
     groups: [],
     cacheDir: '',
+    modelDir: '',
     loading: true,
     status: '',
     busy: {},
@@ -1131,6 +1141,7 @@ function modelsTab() {
         const d = await res.json();
         this.groups = d.groups;
         this.cacheDir = d.cache_dir;
+        this.modelDir = d.model_dir;
       } catch (e) {
         this.status = this.$store.i18n.t('models.error_prefix') + e.message;
       }

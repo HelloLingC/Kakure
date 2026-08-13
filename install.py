@@ -12,17 +12,22 @@ ffmpeg -> config file -> launch.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 import urllib.request
-import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 VENV_PY = ROOT / ".venv" / "Scripts" / "python.exe"
 PYTHON_312_URL = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe"
-FFMPEG_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+# Pinned FFmpeg 8.1.2 (full-shared build). It ships the avcodec/avformat/avutil/
+# DLLs that torchcodec (0.15, supports FFmpeg 4-8) needs to load. gyan.dev's
+# current "release" builds are FFmpeg 9 and static-only, neither of which works
+# with torchcodec, so we pin an older shared build that does.
+FFMPEG_URL = "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-full_build-shared.7z"
+FFMPEG_DLL_PTH = "torchcodec_ffmpeg_path.pth"
 TSINGHUA_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 
@@ -115,57 +120,113 @@ def install_package() -> None:
     print()
 
 
-def setup_ffmpeg() -> None:
-    if shutil.which("ffmpeg"):
-        print("[4/6] Detected system ffmpeg, no download needed.", flush=True)
+def _venv_site_packages() -> Path:
+    return ROOT / ".venv" / "Lib" / "site-packages"
+
+
+def _register_ffmpeg_dll_dir(dll_dir: Path) -> None:
+    """Point the venv Python at the shared FFmpeg DLLs at interpreter startup.
+
+    torchcodec loads libtorchcodec_core*.dll, whose dependencies (avcodec-*.dll,
+    avformat-*.dll, ...) are resolved via the Windows DLL search path, which does
+    NOT include PATH under the safe-DLL-search mode Python enables. The .pth file
+    calls os.add_dll_directory() before any user code runs, so `import torchcodec`
+    works out of the box.
+    """
+    site = _venv_site_packages()
+    if not site.is_dir():
+        print("[WARN] .venv site-packages not found; cannot register ffmpeg DLLs for torchcodec.")
         return
-    if (ROOT / "bin" / "ffmpeg" / "bin" / "ffmpeg.exe").exists():
-        print("[4/6] Found the bundled ffmpeg.", flush=True)
+    line = f"import os; os.add_dll_directory(r'{dll_dir}')\n"
+    (site / FFMPEG_DLL_PTH).write_text(line, encoding="utf-8")
+    print(f"       Registered {dll_dir} for torchcodec.", flush=True)
+
+
+def _shared_ffmpeg_dir() -> Path | None:
+    """Directory of a system ffmpeg that ships torchcodec-compatible DLLs."""
+    exe = shutil.which("ffmpeg")
+    if not exe:
+        return None
+    dll_dir = Path(exe).resolve().parent
+    for dll in dll_dir.glob("avcodec-*.dll"):
+        m = re.fullmatch(r"avcodec-(\d+)\.dll", dll.name)
+        # avcodec 58..62 == FFmpeg 4..8 (torchcodec 0.15 supports FFmpeg 4-8).
+        if m and 58 <= int(m.group(1)) <= 62:
+            return dll_dir
+    return None
+
+
+def setup_ffmpeg() -> None:
+    bundled = ROOT / "bin" / "ffmpeg" / "bin"
+    if (bundled / "ffmpeg.exe").exists() and list(bundled.glob("avcodec-*.dll")):
+        print("[4/6] Found the bundled shared ffmpeg.", flush=True)
+        _register_ffmpeg_dll_dir(bundled)
         return
 
-    print("[4/6] ffmpeg not detected, downloading the portable build (~80MB)...", flush=True)
+    system_shared = _shared_ffmpeg_dir()
+    if system_shared:
+        print("[4/6] Detected a shared system ffmpeg with avcodec DLLs, reusing it.", flush=True)
+        _register_ffmpeg_dll_dir(system_shared)
+        return
+
+    if shutil.which("ffmpeg"):
+        print("[4/6] System ffmpeg is not a shared build (no avcodec DLLs),")
+        print("       bundling a shared build so torchcodec can load.")
+    else:
+        print("[4/6] ffmpeg not detected, downloading the shared build (~57MB)...", flush=True)
     print(f"Download URL: {FFMPEG_URL}", flush=True)
+
     dest_dir = ROOT / "bin" / "ffmpeg"
     dest_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = Path(os.environ.get("TEMP", str(ROOT))) / "kakure_ffmpeg.zip"
+    archive = Path(os.environ.get("TEMP", str(ROOT))) / "kakure_ffmpeg.7z"
     try:
-        urllib.request.urlretrieve(FFMPEG_URL, zip_path)
+        urllib.request.urlretrieve(FFMPEG_URL, archive)
     except Exception as exc:
         print(f"[ERROR] Failed to download ffmpeg: {exc}")
         pause()
         sys.exit(1)
 
     print("Extracting ffmpeg ...", flush=True)
+    # gyan.dev ships shared builds as .7z (BCJ2); Windows 10/11 ship a libarchive-
+    # based tar.exe that can extract it, so no third-party tool is needed.
+    tar = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tar.exe"
     try:
-        with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(dest_dir)
+        if not tar.exists():
+            raise RuntimeError(f"tar.exe not found at {tar}")
+        if run([str(tar), "-xf", str(archive), "-C", str(dest_dir)]) != 0:
+            raise RuntimeError("tar extraction returned an error")
     except Exception as exc:
         print(f"[ERROR] Failed to extract ffmpeg: {exc}")
         pause()
         sys.exit(1)
     finally:
-        zip_path.unlink(missing_ok=True)
+        archive.unlink(missing_ok=True)
 
-    # The extracted directory is bin\ffmpeg\ffmpeg-xxx-essentials_build\bin\ffmpeg.exe;
-    # move everything to a flat bin\ffmpeg\bin\ffmpeg.exe layout.
+    # The archive extracts to bin\ffmpeg\ffmpeg-8.1.2-full_build-shared\bin\;
+    # move everything (exes + DLLs) to a flat bin\ffmpeg\bin\ layout.
     bin_dir = dest_dir / "bin"
     bin_dir.mkdir(exist_ok=True)
     moved = False
     for sub in dest_dir.glob("ffmpeg-*"):
-        if (sub / "bin" / "ffmpeg.exe").exists():
-            for name in ("ffmpeg.exe", "ffprobe.exe"):
-                src = sub / "bin" / name
-                if src.exists():
-                    shutil.move(str(src), str(bin_dir / name))
+        src_bin = sub / "bin"
+        if (src_bin / "ffmpeg.exe").exists():
+            for src in src_bin.iterdir():
+                if src.is_file():
+                    shutil.move(str(src), str(bin_dir / src.name))
             shutil.rmtree(sub, ignore_errors=True)
             moved = True
             break
 
-    if not moved or not (bin_dir / "ffmpeg.exe").exists():
-        print("[ERROR] No executable found after extracting ffmpeg.")
+    if (
+        not moved
+        or not (bin_dir / "ffmpeg.exe").exists()
+        or not list(bin_dir.glob("avcodec-*.dll"))
+    ):
+        print("[ERROR] No shared ffmpeg found after extracting.")
         pause()
         sys.exit(1)
     print("ffmpeg installed to the project bin\\ffmpeg directory.", flush=True)
+    _register_ffmpeg_dll_dir(bin_dir)
     print()
 
 

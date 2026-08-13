@@ -1,9 +1,13 @@
 """Model management - list, download, and delete AI models (Whisper, IndexTTS).
 
-Models are stored in the HuggingFace Hub cache (``HF_HUB_CACHE`` / ``HF_HOME``
-or ``~/.cache/huggingface/hub``). This module provides the catalog of models
-Kakure uses, reports their install status and disk usage, downloads them with
-progress callbacks, and removes them from the cache.
+All models are stored in the HuggingFace Hub cache (``HF_HUB_CACHE`` /
+``HF_HOME`` or ``~/.cache/huggingface/hub``). When ``model_dir`` is set in
+kakure.toml (portable / integrated-package mode), ``apply_model_env()``
+points ``HF_HOME``/``HF_HUB_CACHE`` at a folder inside the project, so
+``hf_cache_dir()`` resolves there and every download lands in the project
+folder. This module provides the catalog of models Kakure uses, reports their
+install status and disk usage, downloads them with progress callbacks, and
+removes them from the cache.
 
 Heavy third-party imports happen inside functions so importing this module
 stays cheap.
@@ -165,7 +169,10 @@ def _cached_sizes() -> dict[str, int]:
     try:
         from huggingface_hub import scan_cache_dir
 
-        info = scan_cache_dir()
+        cache_dir = hf_cache_dir()
+        if not cache_dir.is_dir():
+            return {}
+        info = scan_cache_dir(cache_dir=str(cache_dir))
         return {repo.repo_id: repo.size_on_disk for repo in info.repos}
     except Exception as e:
         logger.warning("Failed to scan HuggingFace cache: %s", e)
@@ -192,7 +199,9 @@ def model_status() -> dict:
 
     Returns:
         A dict with ``groups`` (catalog plus ``installed`` / ``size_on_disk``
-        per model) and ``cache_dir`` (the resolved HF cache directory).
+        per model), ``cache_dir`` (the resolved HuggingFace Hub cache) and
+        ``model_dir`` (the unified model root, empty when using framework
+        defaults).
     """
     sizes = _cached_sizes()
     groups = []
@@ -204,7 +213,14 @@ def model_status() -> dict:
             entry["size_on_disk"] = sizes.get(model["repo_id"])
             models.append(entry)
         groups.append({**group, "models": models})
-    return {"groups": groups, "cache_dir": str(hf_cache_dir())}
+    from kakure.config import load_settings, model_dir_path
+
+    model_dir = model_dir_path(load_settings())
+    return {
+        "groups": groups,
+        "cache_dir": str(hf_cache_dir()),
+        "model_dir": str(model_dir) if model_dir else "",
+    }
 
 
 def download_model(repo_id: str, on_progress: Callable[[int, int], None] | None = None) -> str:
@@ -253,7 +269,10 @@ def delete_model(repo_id: str) -> int:
     """
     from huggingface_hub import scan_cache_dir
 
-    info = scan_cache_dir()
+    cache_dir = hf_cache_dir()
+    if not cache_dir.is_dir():
+        return 0
+    info = scan_cache_dir(cache_dir=str(cache_dir))
     repo = next((r for r in info.repos if r.repo_id == repo_id), None)
     if repo is None:
         return 0

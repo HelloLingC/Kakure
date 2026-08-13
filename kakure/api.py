@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 import queue as sync_queue
 import shutil
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,14 +26,31 @@ from kakure.checkpoint import (
     run_translation,
     run_tts,
 )
-from kakure.config import Settings, _settings_to_dict, load_settings, save_settings
-from kakure.models import delete_model as delete_model_from_cache
-from kakure.models import download_model as download_model_to_cache
-from kakure.models import model_status as list_models_status
+from kakure.config import (
+    Settings,
+    _settings_to_dict,
+    apply_model_env,
+    load_settings,
+    save_settings,
+)
+from kakure.models import (
+    delete_model as delete_model_from_cache,
+)
+from kakure.models import (
+    download_model as download_model_to_cache,
+)
+from kakure.models import (
+    model_status as list_models_status,
+)
 from kakure.srt import srt_path as srt_output_path
 from kakure.srt import write_srt
 
 logger = logging.getLogger(__name__)
+
+# Point all model downloads at the unified model directory when model_dir is
+# set in kakure.toml (portable / integrated-package mode). Runs at import
+# time, before any model library (huggingface_hub, torch, ...) is imported.
+apply_model_env(load_settings())
 
 app = FastAPI(title="Kakure API", version="0.1.0")
 

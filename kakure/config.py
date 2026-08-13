@@ -174,6 +174,12 @@ class Settings(BaseModel):
     # directory as the input file (temp_dir in the web UI, input file dir in
     # the CLI).
     srt_output_dir: str = ""
+    # Unified directory for ALL model downloads (faster-whisper, kotoba-
+    # whisper, IndexTTS, Demucs). Relative to the project root. Empty = use
+    # each framework's default location (HuggingFace Hub cache, torch hub,
+    # ...). Set this when packaging Kakure as a portable build so every
+    # model file stays inside the project folder.
+    model_dir: str = ""
 
     # Checkpoints
     # Cache pipeline stage results (ASR, translation, TTS, vocal separation)
@@ -269,3 +275,40 @@ def get_settings(path: Path | None = None) -> Settings:
     settings = load_settings(path)
     Path(settings.temp_dir).mkdir(parents=True, exist_ok=True)
     return settings
+
+
+def model_dir_path(settings: Settings | None = None) -> Path | None:
+    """Resolve the unified model directory, or ``None`` when unset.
+
+    Empty ``model_dir`` (the default) means each framework keeps using its own
+    default location (HuggingFace Hub cache, torch hub, ...). Relative paths
+    are resolved against the project root (current working directory).
+    """
+    settings = settings or Settings()
+    return Path(settings.model_dir) if settings.model_dir else None
+
+
+def apply_model_env(settings: Settings | None = None) -> None:
+    """Point all model downloads at ``model_dir`` when it is configured.
+
+    Used for portable builds / integrated packages: with ``model_dir`` set,
+    every framework stores its files under one folder in the project:
+
+    - ``HF_HOME`` / ``HF_HUB_CACHE`` -> faster-whisper, kotoba-whisper,
+      IndexTTS and anything else that downloads from the HuggingFace Hub
+    - ``TORCH_HOME`` / ``HUB_HOME`` -> Demucs model weights (torch hub)
+
+    Must be called before any model library is imported, because
+    huggingface_hub and torch read these variables at import time. Callers:
+    ``cli.main()`` and the ``kakure.api`` module import. No-op when
+    ``model_dir`` is empty.
+    """
+    import os
+
+    base = model_dir_path(settings)
+    if base is None:
+        return
+    os.environ["HF_HOME"] = str(base / "huggingface")
+    os.environ["HF_HUB_CACHE"] = str(base / "huggingface" / "hub")
+    os.environ["TORCH_HOME"] = str(base / "torch")
+    os.environ["HUB_HOME"] = str(base / "torch")
