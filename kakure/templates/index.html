@@ -97,6 +97,9 @@ document.addEventListener('alpine:init', () => {
   <symbol id="icon-arrow-down-tray" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
     <path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
   </symbol>
+  <symbol id="icon-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+  </symbol>
   <symbol id="icon-archive-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
     <path d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
   </symbol>
@@ -112,7 +115,7 @@ document.addEventListener('alpine:init', () => {
   </symbol>
 </svg>
 
-<div class="max-w-6xl mx-auto px-4 py-6">
+<div class="max-w-4xl mx-auto px-4 py-6">
 
   <!-- Header -->
   <header class="mb-6 flex items-start justify-between gap-4">
@@ -147,20 +150,35 @@ document.addEventListener('alpine:init', () => {
             x-text="$store.i18n.t('ffmpeg.dismiss')"></button>
   </div>
 
-  <!-- Tab Nav -->
-  <nav class="flex gap-0 mb-6 border-b border-gray-200 dark:border-gray-700">
-    <button @click="activeTab = 'process'"
-      :class="activeTab === 'process' ? 'border-blue-500 dark:border-blue-400 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'"
-      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer"
-      x-text="$store.i18n.t('tab.process')"></button>
-    <button @click="activeTab = 'settings'"
-      :class="activeTab === 'settings' ? 'border-blue-500 dark:border-blue-400 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'"
-      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer"
-      x-text="$store.i18n.t('tab.settings')"></button>
-    <button @click="activeTab = 'models'"
-      :class="activeTab === 'models' ? 'border-blue-500 dark:border-blue-400 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'"
-      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer"
-      x-text="$store.i18n.t('tab.models')"></button>
+  <!-- Tab Nav (Material Design 3 primary tabs) -->
+  <nav class="flex items-stretch mb-6 border-b border-gray-200 dark:border-gray-700" role="tablist" aria-label="Tabs">
+    <button @click="activeTab = 'process'" type="button" role="tab"
+      :aria-selected="activeTab === 'process'"
+      class="relative flex-1 px-5 h-12 font-medium text-sm tracking-wide transition-colors cursor-pointer"
+      :class="activeTab === 'process' ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'">
+      <span x-text="$store.i18n.t('tab.process')"></span>
+      <span aria-hidden="true"
+        class="absolute inset-x-0 bottom-0 mx-auto w-16 h-[3px] rounded-full transition-colors"
+        :class="activeTab === 'process' ? 'bg-blue-600 dark:bg-blue-400' : 'bg-transparent'"></span>
+    </button>
+    <button @click="activeTab = 'settings'" type="button" role="tab"
+      :aria-selected="activeTab === 'settings'"
+      class="relative flex-1 px-5 h-12 font-medium text-sm tracking-wide transition-colors cursor-pointer"
+      :class="activeTab === 'settings' ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'">
+      <span x-text="$store.i18n.t('tab.settings')"></span>
+      <span aria-hidden="true"
+        class="absolute inset-x-0 bottom-0 mx-auto w-16 h-[3px] rounded-full transition-colors"
+        :class="activeTab === 'settings' ? 'bg-blue-600 dark:bg-blue-400' : 'bg-transparent'"></span>
+    </button>
+    <button @click="activeTab = 'models'" type="button" role="tab"
+      :aria-selected="activeTab === 'models'"
+      class="relative flex-1 px-5 h-12 font-medium text-sm tracking-wide transition-colors cursor-pointer"
+      :class="activeTab === 'models' ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'">
+      <span x-text="$store.i18n.t('tab.models')"></span>
+      <span aria-hidden="true"
+        class="absolute inset-x-0 bottom-0 mx-auto w-16 h-[3px] rounded-full transition-colors"
+        :class="activeTab === 'models' ? 'bg-blue-600 dark:bg-blue-400' : 'bg-transparent'"></span>
+    </button>
   </nav>
 
   <!-- ================================================================ -->
@@ -173,6 +191,7 @@ document.addEventListener('alpine:init', () => {
       <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2" x-text="$store.i18n.t('process.upload_label')"></label>
       <div class="flex items-center gap-3">
         <input type="file" name="file" accept="audio/*" required
+               @change="onFileSelected($event)"
                class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4
                       file:rounded-md file:border-0 file:text-sm file:font-medium
                       file:bg-blue-50 dark:file:bg-blue-900/40 file:text-blue-700 dark:file:text-blue-300 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/60
@@ -189,6 +208,22 @@ document.addEventListener('alpine:init', () => {
           </span>
         </button>
       </div>
+      <p x-show="selectedFile" class="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+        <span class="flex items-center gap-2 flex-wrap">
+          <span x-text="selectedFile.name"></span>
+          <span class="inline-flex items-center gap-0.5 font-medium text-gray-600 dark:text-gray-300" x-show="selectedFile.duration">
+            <svg class="w-3.5 h-3.5"><use href="#icon-clock"></use></svg>
+            <span x-text="fmtDuration(selectedFile.duration)"></span>
+          </span>
+        </span>
+        <span class="flex items-center gap-2 flex-wrap">
+          <span x-text="$store.i18n.t('process.file_type') + ': ' + (selectedFile.type || 'unknown')"></span>
+          <span>·</span>
+          <span x-text="$store.i18n.t('process.file_size') + ': ' + fmtSize(selectedFile.size)"></span>
+          <span>·</span>
+          <span x-text="$store.i18n.t('process.file_modified') + ': ' + fmtDate(selectedFile.lastModified)"></span>
+        </span>
+      </p>
     </form>
 
     <p class="text-xs text-gray-400 dark:text-gray-500 mb-4" x-text="$store.i18n.t('process.hint')"></p>
@@ -245,9 +280,17 @@ document.addEventListener('alpine:init', () => {
     </div>
 
     <!-- Status / Error -->
-    <div x-show="jobId && !completed && !error" class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md text-sm flex items-center justify-between gap-3">
-      <span x-text="statusMessage" x-show="statusMessage"></span>
-      <span class="shrink-0 font-medium">
+    <div x-show="jobId && !error" class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md text-sm flex items-start justify-between gap-3">
+      <div class="space-y-1">
+        <p x-show="statusMessage" x-text="statusMessage"></p>
+        <template x-for="log in stageLog" :key="log.stage">
+          <p class="flex items-center gap-1.5 text-green-700 dark:text-green-300 text-xs">
+            <svg class="w-3.5 h-3.5 shrink-0"><use href="#icon-check-circle"></use></svg>
+            <span x-text="log.text"></span>
+          </p>
+        </template>
+      </div>
+      <span x-show="!completed" class="shrink-0 font-medium">
         <svg class="inline-block w-4 h-4 -mt-0.5 animate-spin"><use href="#icon-spinner"></use></svg>
         <span x-text="$store.i18n.t('elapsed')"></span>: <span x-text="formatElapsed()" class="tabular-nums"></span>
       </span>
@@ -865,9 +908,11 @@ function processTab() {
     completed: false,
     result: null,
     segments: [],
+    stageLog: [],
     asrDone: false,
     translateDone: false,
     uploading: false,
+    selectedFile: null,
     elapsed: 0,
     _stageOrder: null,
     _es: null,
@@ -879,6 +924,44 @@ function processTab() {
 
     stageName(stage) { return this.$store.i18n.t('stage.' + stage.id + '.name'); },
     stageDesc(stage) { return this.$store.i18n.t('stage.' + stage.id + '.desc'); },
+
+    fmtSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(1024));
+      return (bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0) + ' ' + units[i];
+    },
+
+    fmtDuration(seconds) {
+      if (!isFinite(seconds)) return '--:--';
+      const h = Math.floor(seconds / 3600);
+      const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+      const s = String(Math.floor(seconds % 60)).padStart(2, '0');
+      return (h > 0 ? h + ':' : '') + m + ':' + s;
+    },
+
+    fmtDate(ms) {
+      if (!ms) return '--';
+      const d = new Date(ms);
+      const p = n => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    },
+
+    onFileSelected(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) { this.selectedFile = null; return; }
+      this.selectedFile = { name: file.name, size: file.size, type: file.type, lastModified: file.lastModified, duration: null };
+      const url = URL.createObjectURL(file);
+      const audio = new Audio();
+      const cleanup = () => { URL.revokeObjectURL(url); audio.removeAttribute('src'); };
+      audio.addEventListener('loadedmetadata', () => {
+        this.selectedFile.duration = audio.duration;
+        cleanup();
+      }, { once: true });
+      audio.addEventListener('error', () => { cleanup(); }, { once: true });
+      audio.preload = 'metadata';
+      audio.src = url;
+    },
 
     formatElapsed() {
       const s = Math.floor(this.elapsed);
@@ -895,8 +978,10 @@ function processTab() {
     async start(event) {
       this.uploading = true; this.error = null; this.completed = false;
       this.result = null; this.segments = [];
+      this.stageLog = [];
       this.asrDone = false; this.translateDone = false;
       this.elapsed = 0;
+      this.selectedFile = null;
       this.stages = this.stages.map(s => ({...s, status: 'pending'}));
       this.statusMessage = '';
       const formData = new FormData(event.target);
@@ -926,6 +1011,14 @@ function processTab() {
             if (d.status === 'completed' && this._stageOrder.indexOf(s.id) < this._stageOrder.indexOf(d.stage)) return {...s, status: 'completed'};
             return s;
           });
+          if (d.status === 'completed' && d.stage) {
+            const label = this.stageName({id: d.stage});
+            const time = d.elapsed_seconds != null ? this.fmtDuration(d.elapsed_seconds) : null;
+            const parts = [label];
+            if (d.cached) parts.push(this.$store.i18n.t('stage.cached'));
+            if (time) parts.push(this.$store.i18n.t('stage.completed_in', {time}));
+            this.stageLog.push({ stage: d.stage, text: parts.join(' · ') });
+          }
           if (d.message) this.statusMessage = d.message;
           if (d.segments) {
             this.segments = d.segments;

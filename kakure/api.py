@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import queue as sync_queue
 import shutil
 import threading
@@ -177,6 +178,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
 
         from kakure.asr import create_asr_processor
 
+        _t0 = time.perf_counter()
         asr = create_asr_processor(settings)
         transcription, asr_cached = run_asr(ckpt, lambda: asr.transcribe(input_path))
         if not transcription.segments:
@@ -212,6 +214,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                 "segments_count": len(transcription.segments),
                 "language": transcription.language,
                 "duration": transcription.duration,
+                "elapsed_seconds": time.perf_counter() - _t0,
             },
         )
 
@@ -231,6 +234,8 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
         )
 
         from kakure.translator import TranslatedSegment, Translator
+
+        _t0 = time.perf_counter()
 
         def _translate(segments):
             translated = [
@@ -254,6 +259,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                 "stage": "translate",
                 "status": "completed",
                 "cached": tr_cached,
+                "elapsed_seconds": time.perf_counter() - _t0,
                 "segments": [
                     {
                         "id": seg.id,
@@ -284,6 +290,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
 
         from kakure.tts import create_tts_processor
 
+        _t0 = time.perf_counter()
         segment_dicts = [
             {
                 "id": seg.id,
@@ -315,6 +322,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                 "stage": "tts",
                 "status": "completed",
                 "cached": tts_reused > 0,
+                "elapsed_seconds": time.perf_counter() - _t0,
                 "segments": len(tts_dicts),
             },
         )
@@ -334,6 +342,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
 
             from kakure.separator import VocalSeparator
 
+            _t0 = time.perf_counter()
             separator = VocalSeparator(settings)
             separated, sep_cached = run_separation(
                 ckpt,
@@ -348,6 +357,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                     "stage": "separate",
                     "status": "completed",
                     "cached": sep_cached,
+                    "elapsed_seconds": time.perf_counter() - _t0,
                 },
             )
         else:
@@ -376,6 +386,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
         from kakure.mixer import AudioMixer, MixInput
 
         original_audio = AudioSegment.from_file(str(input_path))
+        _t0 = time.perf_counter()
         mix_input = MixInput(
             original_audio=original_audio,
             segments=segment_dicts,
@@ -391,6 +402,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                 "type": "progress",
                 "stage": "mix",
                 "status": "completed",
+                "elapsed_seconds": time.perf_counter() - _t0,
             },
         )
 
@@ -406,6 +418,7 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
         )
 
         output_path = input_path.parent / f"{input_path.stem}_bilingual.{settings.output_format}"
+        _t0 = time.perf_counter()
         mixer.export(
             mixed_audio,
             output_path,
@@ -419,6 +432,15 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
             translated,
             srt_path,
             text=lambda seg: f"{seg.original_text}\n{seg.translated_text}",
+        )
+        _push_event(
+            job,
+            {
+                "type": "progress",
+                "stage": "export",
+                "status": "completed",
+                "elapsed_seconds": time.perf_counter() - _t0,
+            },
         )
 
         duration = len(mixed_audio) / 1000.0
