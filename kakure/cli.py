@@ -20,8 +20,8 @@ def main() -> None:
     parser.add_argument(
         "--port",
         type=int,
-        default=7860,
-        help="Server port (default: 7860)",
+        default=7530,
+        help="Server port (default: 7530)",
     )
     parser.add_argument(
         "--no-browser",

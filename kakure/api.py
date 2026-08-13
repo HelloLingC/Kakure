@@ -26,6 +26,9 @@ from kakure.checkpoint import (
     run_tts,
 )
 from kakure.config import Settings, _settings_to_dict, load_settings, save_settings
+from kakure.models import delete_model as delete_model_from_cache
+from kakure.models import download_model as download_model_to_cache
+from kakure.models import model_status as list_models_status
 from kakure.srt import srt_path as srt_output_path
 from kakure.srt import write_srt
 
@@ -196,7 +199,17 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                 "stage": "asr",
                 "status": "completed",
                 "cached": asr_cached,
-                "segments": len(transcription.segments),
+                "segments": [
+                    {
+                        "id": seg.id,
+                        "start": seg.start,
+                        "end": seg.end,
+                        "original_text": seg.text,
+                        "translated_text": "",
+                    }
+                    for seg in transcription.segments
+                ],
+                "segments_count": len(transcription.segments),
                 "language": transcription.language,
                 "duration": transcription.duration,
             },
@@ -241,6 +254,16 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                 "stage": "translate",
                 "status": "completed",
                 "cached": tr_cached,
+                "segments": [
+                    {
+                        "id": seg.id,
+                        "start": seg.start,
+                        "end": seg.end,
+                        "original_text": seg.original_text,
+                        "translated_text": seg.translated_text,
+                    }
+                    for seg in translated
+                ],
             },
         )
 
@@ -434,6 +457,41 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
         job.status = "failed"
         job.error = _friendly_error(e)
         _push_event(job, {"type": "error", "message": job.error})
+
+
+# ---------------------------------------------------------------------------
+# Model download runner (background thread)
+# ---------------------------------------------------------------------------
+
+
+def _run_download_job(job: Job, repo_id: str) -> None:
+    """Download a model in the background, streaming progress via the job queue."""
+    try:
+        job.status = "running"
+
+        def _on_progress(done: int, total: int) -> None:
+            percent = round(done / total * 100, 1) if total else 0.0
+            _push_event(
+                job,
+                {
+                    "type": "progress",
+                    "stage": "download",
+                    "repo_id": repo_id,
+                    "done": done,
+                    "total": total,
+                    "percent": percent,
+                },
+            )
+
+        download_model_to_cache(repo_id, on_progress=_on_progress)
+        job.status = "completed"
+        job.result = {"repo_id": repo_id}
+        _push_event(job, {"type": "finished", "repo_id": repo_id})
+    except Exception as e:
+        logger.exception("Model download job %s failed for %s", job.id, repo_id)
+        job.status = "failed"
+        job.error = _friendly_error(e)
+        _push_event(job, {"type": "error", "repo_id": repo_id, "message": job.error})
 
 
 # ---------------------------------------------------------------------------
@@ -641,6 +699,69 @@ async def clear_checkpoints():
         return JSONResponse({"status": "ok", "cleared": cleared})
     except Exception as e:
         raise HTTPException(500, f"Failed to clear checkpoints: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Model management endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/models")
+async def models_status():
+    """Return the model catalog annotated with install status and sizes."""
+    try:
+        return JSONResponse(list_models_status())
+    except Exception as e:
+        raise HTTPException(500, f"Failed to inspect models: {e}")
+
+
+@app.post("/api/models/download")
+async def models_download(body: dict[str, Any]):
+    """Start a background download of a model, returning a job to stream from."""
+    repo_id = body.get("repo_id")
+    if not repo_id:
+        raise HTTPException(400, "Missing 'repo_id'")
+
+    job = _create_job()
+    thread = threading.Thread(
+        target=_run_download_job,
+        args=(job, repo_id),
+        daemon=True,
+    )
+    thread.start()
+    return JSONResponse({"job_id": job.id})
+
+
+@app.get("/api/models/download/{job_id}")
+async def models_download_progress(job_id: str):
+    """SSE stream of model download progress."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+
+    return StreamingResponse(
+        _sse_stream(job),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/models/delete")
+async def models_delete(body: dict[str, Any]):
+    """Remove a model from the local HuggingFace cache."""
+    repo_id = body.get("repo_id")
+    if not repo_id:
+        raise HTTPException(400, "Missing 'repo_id'")
+    try:
+        freed = delete_model_from_cache(repo_id)
+        return JSONResponse({"status": "ok", "freed": freed})
+    except Exception as e:
+        raise HTTPException(500, f"Failed to delete model: {e}")
 
 
 # ---------------------------------------------------------------------------

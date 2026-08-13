@@ -17,7 +17,7 @@ if not exist ".venv\Scripts\kakure.exe" (
 )
 
 echo Starting Kakure, your browser will open automatically...
-echo If it does not open, visit http://127.0.0.1:7860 manually.
+echo If it does not open, visit http://127.0.0.1:7530 manually.
 echo.
 echo Closing this window stops Kakure.
 echo.

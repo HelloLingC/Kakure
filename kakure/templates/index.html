@@ -157,6 +157,10 @@ document.addEventListener('alpine:init', () => {
       :class="activeTab === 'settings' ? 'border-blue-500 dark:border-blue-400 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'"
       class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer"
       x-text="$store.i18n.t('tab.settings')"></button>
+    <button @click="activeTab = 'models'"
+      :class="activeTab === 'models' ? 'border-blue-500 dark:border-blue-400 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'"
+      class="px-5 py-2.5 border-b-2 font-medium text-sm transition-colors cursor-pointer"
+      x-text="$store.i18n.t('tab.models')"></button>
   </nav>
 
   <!-- ================================================================ -->
@@ -250,6 +254,46 @@ document.addEventListener('alpine:init', () => {
     </div>
     <div x-show="error" class="mb-4 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-md text-sm whitespace-pre-line" x-text="error"></div>
 
+    <!-- Live preview: transcription / translation results as they become ready -->
+    <div x-show="segments.length" class="space-y-2 mb-4" x-transition>
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-sm font-medium text-gray-600 dark:text-gray-300">
+          <span x-text="$store.i18n.t('process.preview_title')"></span>
+          <span class="text-gray-400 dark:text-gray-500">·</span>
+          <span x-text="$store.i18n.t('process.segments')"></span>:
+          <span class="tabular-nums" x-text="segments.length"></span>
+        </p>
+        <p x-show="!translateDone && !completed" class="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+          <svg class="animate-spin w-3.5 h-3.5 shrink-0"><use href="#icon-spinner"></use></svg>
+          <span x-text="$store.i18n.t('process.translation_pending')"></span>
+        </p>
+      </div>
+      <div class="overflow-x-auto max-h-96 overflow-y-auto bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.id')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.start')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.end')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.japanese')"></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.chinese')"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+            <template x-for="seg in segments" :key="seg.id">
+              <tr class="hover:bg-gray-50 dark:hover:bg-gray-900">
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400" x-text="seg.id"></td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400" x-text="seg.start.toFixed(2)"></td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400" x-text="seg.end.toFixed(2)"></td>
+                <td class="px-3 py-2 text-gray-800 dark:text-gray-100 max-w-md" x-text="seg.original_text"></td>
+                <td class="px-3 py-2 text-gray-800 dark:text-gray-100 max-w-md" x-text="seg.translated_text"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Results -->
     <div x-show="completed" class="space-y-4" x-transition>
       <div class="p-4 bg-green-50 dark:bg-green-900/30 rounded-md border border-green-200 dark:border-green-800">
@@ -273,32 +317,6 @@ document.addEventListener('alpine:init', () => {
         <a :href="'/api/process/' + jobId + '/srt'"
            class="inline-flex items-center gap-1 px-4 py-2 bg-gray-600 dark:bg-gray-700 text-white rounded-md text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors no-underline"
            x-text="$store.i18n.t('process.download_srt')"></a>
-      </div>
-
-      <!-- Segments table -->
-      <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm" x-show="segments.length">
-        <table class="w-full text-sm">
-          <thead class="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-            <tr>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.id')"></th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.start')"></th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.end')"></th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.japanese')"></th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" x-text="$store.i18n.t('process.col.chinese')"></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-            <template x-for="seg in segments" :key="seg.id">
-              <tr class="hover:bg-gray-50 dark:hover:bg-gray-900">
-                <td class="px-3 py-2 text-gray-600 dark:text-gray-400" x-text="seg.id"></td>
-                <td class="px-3 py-2 text-gray-600 dark:text-gray-400" x-text="seg.start.toFixed(2)"></td>
-                <td class="px-3 py-2 text-gray-600 dark:text-gray-400" x-text="seg.end.toFixed(2)"></td>
-                <td class="px-3 py-2 text-gray-800 dark:text-gray-100 max-w-md" x-text="seg.original_text"></td>
-                <td class="px-3 py-2 text-gray-800 dark:text-gray-100 max-w-md" x-text="seg.translated_text"></td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
       </div>
     </div>
 
@@ -739,6 +757,99 @@ document.addEventListener('alpine:init', () => {
 
   </div>
 
+  <!-- ================================================================ -->
+  <!-- MODELS TAB                                                        -->
+  <!-- ================================================================ -->
+  <div x-show="activeTab === 'models'" x-data="modelsTab()" x-init="load()" x-cloak>
+
+    <div class="mb-4 flex items-start justify-between gap-3 flex-wrap">
+      <div class="text-xs text-gray-400 dark:text-gray-500">
+        <p x-text="$store.i18n.t('models.hint')"></p>
+        <p class="mt-1">
+          <span x-text="$store.i18n.t('models.cache_dir')"></span>
+          <code class="font-mono text-gray-500 dark:text-gray-400" x-text="cacheDir"></code>
+        </p>
+      </div>
+      <div class="flex items-center gap-3 shrink-0">
+        <span class="inline-flex items-center gap-1 text-sm"
+              :class="status.includes($store.i18n.t('models.error_prefix')) ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'">
+          <svg x-show="status && !status.includes($store.i18n.t('models.error_prefix'))" class="w-4 h-4 shrink-0"><use href="#icon-check-circle"></use></svg>
+          <svg x-show="status && status.includes($store.i18n.t('models.error_prefix'))" class="w-4 h-4 shrink-0"><use href="#icon-x-circle"></use></svg>
+          <span x-text="status"></span>
+        </span>
+        <button @click="load" type="button"
+                class="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-md text-sm font-medium
+                       hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                x-text="$store.i18n.t('models.refresh')"></button>
+      </div>
+    </div>
+
+    <div x-show="loading" x-cloak class="p-10 text-center">
+      <svg class="animate-spin h-6 w-6 mx-auto text-blue-600 dark:text-blue-400" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+    </div>
+
+    <div x-show="!loading" class="space-y-6">
+      <template x-for="group in groups" :key="group.id">
+        <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200" x-text="group.name"></span>
+            <button @click="downloadAll(group)" type="button"
+                    :disabled="groupBusy(group)"
+                    class="px-3 py-1.5 bg-blue-600 text-white rounded-md text-xs font-medium
+                           hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    x-text="$store.i18n.t('models.download_all')"></button>
+          </div>
+          <div class="divide-y divide-gray-100 dark:divide-gray-800">
+            <template x-for="m in group.models" :key="m.repo_id">
+              <div class="px-4 py-3">
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="text-sm font-medium text-gray-700 dark:text-gray-200" x-text="m.name"></span>
+                      <span class="text-xs text-gray-400 dark:text-gray-500" x-text="m.approx_size"></span>
+                    </div>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 font-mono truncate" x-text="m.repo_id"></p>
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0">
+                    <span class="inline-flex items-center gap-1 text-xs font-medium rounded-full px-2 py-0.5"
+                          :class="m.installed
+                            ? 'bg-green-50 dark:bg-green-900/40 text-green-700 dark:text-green-300'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'">
+                      <svg x-show="m.installed" class="w-3.5 h-3.5"><use href="#icon-check-circle"></use></svg>
+                      <span x-text="m.installed ? $store.i18n.t('models.installed') : $store.i18n.t('models.not_installed')"></span>
+                      <span x-show="m.installed && m.size_on_disk" class="text-gray-400 dark:text-gray-500" x-text="'(' + fmtBytes(m.size_on_disk) + ')'"></span>
+                    </span>
+                    <button x-show="!m.installed" @click="download(m)" type="button"
+                            :disabled="Boolean(busy[m.repo_id])"
+                            class="px-3 py-1.5 bg-blue-600 text-white rounded-md text-xs font-medium
+                                   hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                            x-text="busy[m.repo_id] ? $store.i18n.t('models.downloading') : $store.i18n.t('models.download')"></button>
+                    <button x-show="m.installed" @click="remove(m)" type="button"
+                            :disabled="Boolean(busy[m.repo_id])"
+                            class="px-3 py-1.5 border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 rounded-md text-xs font-medium
+                                   hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                            x-text="$store.i18n.t('models.delete')"></button>
+                  </div>
+                </div>
+                <div x-show="busy[m.repo_id] && progress[m.repo_id]" class="mt-2">
+                  <div class="flex justify-between text-[11px] text-gray-500 dark:text-gray-400 mb-1">
+                    <span x-text="fmtBytes(progress[m.repo_id].done) + ' / ' + fmtBytes(progress[m.repo_id].total)"></span>
+                    <span x-text="Math.round(progress[m.repo_id].percent) + '%'"></span>
+                  </div>
+                  <div class="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-blue-600 dark:bg-blue-400 transition-all duration-300"
+                         :style="'width:' + Math.min(progress[m.repo_id].percent, 100) + '%'"></div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </section>
+      </template>
+    </div>
+
+  </div>
+
 </div>
 
 <!-- ================================================================ -->
@@ -754,6 +865,8 @@ function processTab() {
     completed: false,
     result: null,
     segments: [],
+    asrDone: false,
+    translateDone: false,
     uploading: false,
     elapsed: 0,
     _stageOrder: null,
@@ -782,6 +895,7 @@ function processTab() {
     async start(event) {
       this.uploading = true; this.error = null; this.completed = false;
       this.result = null; this.segments = [];
+      this.asrDone = false; this.translateDone = false;
       this.elapsed = 0;
       this.stages = this.stages.map(s => ({...s, status: 'pending'}));
       this.statusMessage = '';
@@ -813,6 +927,11 @@ function processTab() {
             return s;
           });
           if (d.message) this.statusMessage = d.message;
+          if (d.segments) {
+            this.segments = d.segments;
+            if (d.stage === 'asr') this.asrDone = true;
+            if (d.stage === 'translate') this.translateDone = true;
+          }
         }
         if (d.type === 'finished') { this.completed = true; this.result = d; this.segments = d.segments || []; this.statusMessage = ''; this._stopTimer(); es.close(); }
         if (d.type === 'error') {
@@ -884,6 +1003,121 @@ function settingsTab() {
         if (res.ok) this.ckptStatus = (data.cleared ?? 0) + ' ' + this.$store.i18n.t('ckpt.cleared');
         else this.ckptStatus = this.$store.i18n.t('ckpt.clear_failed');
       } catch (e) { this.ckptStatus = this.$store.i18n.t('ckpt.clear_failed'); }
+    }
+  };
+}
+
+function modelsTab() {
+  return {
+    groups: [],
+    cacheDir: '',
+    loading: true,
+    status: '',
+    busy: {},
+    progress: {},
+    _es: {},
+
+    fmtBytes(n) {
+      if (!n) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let i = 0;
+      while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+      return n.toFixed(i ? 1 : 0) + ' ' + units[i];
+    },
+
+    groupBusy(group) {
+      return group.models.some(m => this.busy[m.repo_id]);
+    },
+
+    async load() {
+      this.loading = true;
+      this.status = '';
+      try {
+        const res = await fetch('/api/models');
+        if (!res.ok) throw new Error((await res.json()).detail || 'failed');
+        const d = await res.json();
+        this.groups = d.groups;
+        this.cacheDir = d.cache_dir;
+      } catch (e) {
+        this.status = this.$store.i18n.t('models.error_prefix') + e.message;
+      }
+      this.loading = false;
+    },
+
+    async download(m) {
+      if (this.busy[m.repo_id]) return;
+      this.busy[m.repo_id] = true;
+      this.progress[m.repo_id] = { done: 0, total: 0, percent: 0 };
+      this.status = '';
+      try {
+        const res = await fetch('/api/models/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repo_id: m.repo_id })
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || 'failed');
+        const { job_id } = await res.json();
+        this._connect(m, job_id);
+      } catch (e) {
+        this.busy[m.repo_id] = false;
+        this.status = this.$store.i18n.t('models.error_prefix') + e.message;
+      }
+    },
+
+    _connect(m, jobId) {
+      if (this._es[m.repo_id]) this._es[m.repo_id].close();
+      const es = new EventSource('/api/models/download/' + jobId);
+      this._es[m.repo_id] = es;
+      es.onmessage = (ev) => {
+        const d = JSON.parse(ev.data);
+        if (d.type === 'progress' && d.repo_id === m.repo_id) {
+          this.progress[m.repo_id] = { done: d.done, total: d.total, percent: Math.min(d.percent, 100) };
+        }
+        if (d.type === 'finished') {
+          es.close();
+          this.busy[m.repo_id] = false;
+          this.status = this.$store.i18n.t('models.done') + ' ' + m.name;
+          this.load();
+        }
+        if (d.type === 'error') {
+          es.close();
+          this.busy[m.repo_id] = false;
+          this.status = this.$store.i18n.t('models.error_prefix') + d.message;
+        }
+      };
+      es.onerror = () => {
+        es.close();
+        if (this.busy[m.repo_id]) {
+          this.busy[m.repo_id] = false;
+          this.status = this.$store.i18n.t('error.lost_connection');
+        }
+      };
+    },
+
+    downloadAll(group) {
+      for (const m of group.models) if (!m.installed && !this.busy[m.repo_id]) this.download(m);
+    },
+
+    async remove(m) {
+      if (this.busy[m.repo_id]) return;
+      if (!confirm(this.$store.i18n.t('models.delete_confirm') + '\n\n' + m.name + ' — ' + m.repo_id
+          + '\n' + this.$store.i18n.t('models.delete_confirm_msg'))) return;
+      this.busy[m.repo_id] = true;
+      this.status = '';
+      try {
+        const res = await fetch('/api/models/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repo_id: m.repo_id })
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || 'failed');
+        const d = await res.json();
+        this.status = this.$store.i18n.t('models.deleted') + ' ' + this.fmtBytes(d.freed || 0);
+        this.load();
+      } catch (e) {
+        this.status = this.$store.i18n.t('models.error_prefix') + e.message;
+      }
+      this.busy[m.repo_id] = false;
     }
   };
 }

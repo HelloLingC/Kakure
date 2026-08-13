@@ -65,7 +65,7 @@ pip install -e ".[demucs]"
 Kakure 通过本地 Web 界面使用，命令行只负责启动服务：
 
 ```bash
-# 启动 Kakure（默认：http://127.0.0.1:7860，浏览器自动打开）
+# 启动 Kakure（默认：http://127.0.0.1:7530，浏览器自动打开）
 kakure
 
 # 自定义端口

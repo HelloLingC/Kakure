@@ -65,7 +65,7 @@ Requires [ffmpeg](https://ffmpeg.org/) for audio processing.
 Kakure is used through a local web UI; the CLI only starts the server:
 
 ```bash
-# Launch Kakure (default: http://127.0.0.1:7860, browser opens automatically)
+# Launch Kakure (default: http://127.0.0.1:7530, browser opens automatically)
 kakure
 
 # Custom port
