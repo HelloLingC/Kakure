@@ -10,7 +10,7 @@
 
 - **ASR（语音识别）**：可选 faster-whisper（多语言）或 kotoba-whisper（日语优化）
 - **AI 翻译**：OpenAI GPT
-- **TTS（语音合成）**：中文语音生成——可选 edge-tts（云端、预制音色）或 IndexTTS（本地 GPU、声音克隆）
+- **TTS（语音合成）**：中文语音生成——可选 edge-tts（云端、预制音色）或 IndexTTS-2.5（本地 GPU、声音克隆）
 - **人声分离**：可选基于 Demucs 的人声/背景分离，混合更干净
 - **混合模式**：四种双语输出模式：
   - `dual`：日语左声道，中文右声道
@@ -18,13 +18,45 @@
   - `sequential`：日语片段后跟中文翻译
   - `whisper`：中文语音极低音量（耳语感）
 
+## 整合包（免安装，解压即用）
+
+不想装 Python、不想跑安装脚本？直接用整合包：
+
+1. 下载 `Kakure-整合包-vX.zip`（由作者发布，或自行用 `build_package.py` 打包）
+2. 解压到任意目录（建议路径无中文无空格，如 `D:\Kakure`）
+3. 双击 `start-kakure.bat` —— 内置了 Python 3.11 运行时和全部依赖，开箱即用
+4. 在 **Settings** 页填入 OpenAI API Key（默认对接 DeepSeek），开始使用
+
+整合包特点：
+- 内置 Python 3.11 便携版运行时，无需安装任何环境
+- 内置共享版 FFmpeg（torchcodec 兼容）
+- 默认内置 whisper small/base 模型，语音识别开箱即用
+- 所有模型下载到包内 `models\` 目录，不写系统目录
+- 已配置 hf-mirror.com 镜像端点，国内网络下载模型更稳定
+- 杀毒软件可能对未签名的内置 Python 误报，添加信任即可
+
+自行打包（在 Windows 上）：
+
+```bash
+python build_package.py                    # CPU 版（默认，包含全部可选组件）
+python build_package.py --core-only        # 只含核心功能（faster-whisper + edge-tts）
+python build_package.py --cuda             # PyTorch 用 CUDA 版（需要 NVIDIA 显卡）
+python build_package.py --mirror           # 用清华 PyPI 镜像加速下载
+python build_package.py --with-indextts    # 打包 IndexTTS-2.5（内置模型+参考音频，TTS 默认切到 IndexTTS）
+python build_package.py --full-models      # 把本机 HF 缓存里的模型全部打进包
+python build_package.py --zip-out DIR      # zip 输出到其他目录（磁盘空间不够时用）
+```
+
+输出在 `dist/`：文件夹 `Kakure/` 和压缩包 `Kakure-整合包-vX.zip`。
+打包机需要提前准备：`.venv` 开发环境（提供 pynini/cdifflib 预编译二进制）和本地 HF 模型缓存。
+
 ## Windows 一键安装（小白专用）
 
 不想碰命令行？用这种方式：
 
 1. 从 GitHub 页面点 **Code → Download ZIP** 下载并解压
 2. 双击 `install.bat` —— 脚本会自动：
-   - 检测/安装 Python 3.12（没有的话自动装，无需管理员权限）
+   - 检测/安装 Python 3.11（没有的话自动装，无需管理员权限）
    - 创建虚拟环境 `.venv`
    - 安装 Kakure 及全部依赖（可选用清华镜像加速）
    - 自动下载免安装版 ffmpeg 到项目 `bin\ffmpeg` 目录（不用自己配 PATH）
@@ -51,8 +83,10 @@ pip install -e ".[dev]"
 # kotoba-whisper ASR 后端（可选）：
 pip install -e ".[kotoba]"
 
-# IndexTTS TTS 后端（可选，需要 NVIDIA GPU）：
-pip install -e ".[indextts]"
+# IndexTTS-2.5 TTS 后端（可选，需要 NVIDIA GPU + git + uv）：
+# 官方安装方式：git clone + uv sync --all-extras（独立环境）
+pip install -e ".[indextts]"   # 空标记，不安装任何包
+kakure install-indextts        # 克隆官方仓库并安装依赖
 
 # Demucs 人声分离（可选，GPU 加速更快）：
 pip install -e ".[demucs]"

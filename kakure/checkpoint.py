@@ -70,8 +70,11 @@ STAGE_SETTING_KEYS: dict[str, list[str]] = {
         "tts_volume",
         "tts_pitch",
         "indextts_reference_audio",
+        "indextts_repo_dir",
         "indextts_model_dir",
+        "indextts_cfg_path",
         "indextts_language",
+        "indextts_speed",
         "model_dir",
     ],
     "separate": [

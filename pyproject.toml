@@ -7,7 +7,7 @@ name = "kakure"
 version = "0.1.0"
 description = "Translate ASMR Japanese voice audio into bilingual voice audio by overlaying a Chinese voice track"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.12"
 license = {text = "MIT"}
 authors = [{name = "Kakure Contributors"}]
 keywords = ["asmr", "translation", "bilingual", "tts", "whisper", "japanese", "chinese"]
@@ -17,7 +17,6 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Sound/Audio",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
@@ -47,9 +46,11 @@ kotoba = [
     "accelerate>=0.20.0",
     "torchaudio>=2.0.0",
 ]
-indextts = [
-    "indextts2-inference>=2.0.0",
-]
+# IndexTTS-2.5 is installed via its official method (git clone + uv sync
+# --all-extras) into its own venv; Kakure bridges to it over a subprocess.
+# The extra is kept as a no-op marker so `pip install -e ".[indextts]"` and
+# packaging commands keep working. See `kakure install-indextts`.
+indextts = []
 demucs = [
     "demucs>=4.1.0",
 ]

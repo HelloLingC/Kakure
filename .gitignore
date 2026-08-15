@@ -35,6 +35,14 @@ Thumbs.db
 
 # IndexTTS model weights
 IndexTTS-2/
+IndexTTS-2.5/
+indextts2.5/
+
+# Official index-tts repo clone (git clone + uv sync --all-extras)
+/indextts-src/
+
+# Old vendored wheel (replaced by the official install method)
+/indextts2_inference-*.whl
 
 # Audio files (for testing)
 *.mp3

@@ -591,12 +591,31 @@ document.addEventListener('alpine:init', () => {
                   <input x-model="s.indextts_reference_audio" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.ref_audio_ph')">
                 </div>
                 <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.repo_dir')"></label>
+                  <input x-model="s.indextts_repo_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.repo_dir_ph')">
+                </div>
+                <div>
                   <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.model_dir')"></label>
                   <input x-model="s.indextts_model_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.model_dir_ph')">
                 </div>
                 <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.cfg_path')"></label>
+                  <input x-model="s.indextts_cfg_path" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.cfg_path_ph')">
+                </div>
+                <div>
                   <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.language')"></label>
-                  <input x-model="s.indextts_language" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="zh">
+                  <select x-model="s.indextts_language" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
+                    <option value="zh">中文 (zh)</option>
+                    <option value="en">English (en)</option>
+                    <option value="ja">日本語 (ja)</option>
+                    <option value="es">Español (es)</option>
+                    <option value="ar">العربية (ar)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"><span x-text="$store.i18n.t('tts.speed')"></span>: <span x-text="s.indextts_speed"></span></label>
+                  <input x-model.number="s.indextts_speed" type="range" min="0.5" max="2.0" step="0.05" class="w-full dark:accent-blue-500">
+                  <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-1">&gt;1.0 变慢，&lt;1.0 变快</p>
                 </div>
               </div>
             </template>
@@ -720,6 +739,11 @@ document.addEventListener('alpine:init', () => {
           </button>
           <div x-show="pathOpen" class="px-4 py-3 space-y-3">
             <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('out.output_dir')"></label>
+              <input x-model="s.output_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('out.output_dir_ph')">
+              <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5" x-text="$store.i18n.t('out.output_dir_hint')"></p>
+            </div>
+            <div>
               <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('out.temp_dir')"></label>
               <input x-model="s.temp_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="tmp">
             </div>
@@ -727,11 +751,6 @@ document.addEventListener('alpine:init', () => {
               <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('out.model_dir')"></label>
               <input x-model="s.model_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('out.model_dir_ph')">
               <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5" x-text="$store.i18n.t('out.model_dir_hint')"></p>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('out.srt_dir')"></label>
-              <input x-model="s.srt_output_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('out.srt_dir_ph')">
-              <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5" x-text="$store.i18n.t('out.srt_dir_hint')"></p>
             </div>
           </div>
         </section>

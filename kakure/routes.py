@@ -25,7 +25,15 @@ from kakure.config import (
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_REFERENCE_DIR = _PROJECT_ROOT / "references"
+# Reference audio folder. In a packaged build __file__ lives inside site-
+# packages, so prefer a references/ folder next to the working directory
+# (the package root when launched via start-kakure.bat) before falling back
+# to the dev-tree location.
+_REFERENCE_DIR = (
+    Path("references")
+    if Path("references").is_dir()
+    else _PROJECT_ROOT / "references"
+)
 _REFERENCE_EXTS = {".wav", ".mp3", ".flac", ".m4a", ".ogg"}
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 

@@ -17,7 +17,7 @@ from kakure.checkpoint import (
     run_translation,
     run_tts,
 )
-from kakure.config import Settings, get_settings
+from kakure.config import Settings, get_settings, output_dir_path
 from kakure.mixer import AudioMixer, MixInput
 from kakure.separator import SeparatedAudio, VocalSeparator
 from kakure.srt import srt_path as srt_output_path
@@ -83,15 +83,13 @@ class Pipeline:
 
         if output_path is None:
             ext = input_path.suffix or f".{self.settings.output_format}"
-            output_path = input_path.parent / f"{input_path.stem}_bilingual{ext}"
+            output_path = output_dir_path(self.settings, input_path) / (
+                f"{input_path.stem}_bilingual{ext}"
+            )
         else:
             output_path = Path(output_path)
 
-        srt_dir = (
-            Path(self.settings.srt_output_dir)
-            if self.settings.srt_output_dir
-            else input_path.parent
-        )
+        srt_dir = output_path.parent
         srt_dir.mkdir(parents=True, exist_ok=True)
         srt_ja_path = srt_output_path(input_path.stem, "ja", srt_dir)
         srt_zh_path = srt_output_path(input_path.stem, "zh", srt_dir)

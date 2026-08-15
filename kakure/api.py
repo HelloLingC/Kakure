@@ -31,6 +31,7 @@ from kakure.config import (
     _settings_to_dict,
     apply_model_env,
     load_settings,
+    output_dir_path,
     save_settings,
 )
 from kakure.models import (
@@ -80,10 +81,11 @@ def _friendly_error(exc: BaseException) -> str:
                 "Vocal separation requires Demucs, which is not installed.\n"
                 'Install it with: pip install -e ".[demucs]"'
             )
-        if exc.name == "indextts":
+        if exc.name == "indextts" or (exc.name or "").startswith("indextts."):
             return (
-                "The IndexTTS backend is not installed.\n"
-                'Install it with: pip install -e ".[indextts]" (requires an NVIDIA GPU).'
+                "The IndexTTS-2.5 backend is not installed.\n"
+                "Install it by running `kakure install-indextts` (git clone + "
+                "uv sync --all-extras; requires an NVIDIA GPU)."
             )
         if exc.name in ("torch", "torchaudio", "transformers"):
             return (
@@ -162,13 +164,12 @@ def _push_event(job: Job, event: dict[str, Any]) -> None:
 def _srt_base(job: Job, input_path: Path, settings: Settings) -> tuple[Path, str]:
     """Return ``(output_dir, stem)`` for generated SRT files.
 
-    When ``settings.srt_output_dir`` is set, SRTs are written there using the
-    original uploaded filename stem; otherwise they go next to the input temp
-    file using its (job-id) stem to avoid collisions between concurrent jobs.
+    When ``output_dir`` is set, SRTs are written there using the original
+    uploaded filename stem; otherwise they go next to the input temp file
+    using its (job-id) stem to avoid collisions between concurrent jobs.
     """
-    if settings.srt_output_dir:
-        output_dir = Path(settings.srt_output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+    if settings.output_dir:
+        output_dir = output_dir_path(settings, input_path)
         stem = Path(job.original_name).stem if job.original_name else input_path.stem
     else:
         output_dir = input_path.parent
@@ -434,7 +435,14 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
             },
         )
 
-        output_path = input_path.parent / f"{input_path.stem}_bilingual.{settings.output_format}"
+        output_stem = (
+            Path(job.original_name).stem
+            if settings.output_dir and job.original_name
+            else input_path.stem
+        )
+        output_path = output_dir_path(settings, input_path) / (
+            f"{output_stem}_bilingual.{settings.output_format}"
+        )
         _t0 = time.perf_counter()
         mixer.export(
             mixed_audio,
