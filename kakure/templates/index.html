@@ -188,45 +188,141 @@ document.addEventListener('alpine:init', () => {
 
     <form @submit.prevent="start" enctype="multipart/form-data"
           class="mb-6 p-6 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
-      <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2" x-text="$store.i18n.t('process.upload_label')"></label>
-      <div class="flex items-center gap-3">
-        <input type="file" name="file" accept="audio/*" required
-               @change="onFileSelected($event)"
-               class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4
-                      file:rounded-md file:border-0 file:text-sm file:font-medium
-                      file:bg-blue-50 dark:file:bg-blue-900/40 file:text-blue-700 dark:file:text-blue-300 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/60
-                      cursor-pointer" :disabled="uploading">
-        <button type="submit"
-                class="shrink-0 px-6 py-2 bg-blue-600 text-white rounded-md text-sm font-medium
-                       hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
-                       transition-colors cursor-pointer"
-                :disabled="uploading">
-          <span x-show="!uploading" x-text="$store.i18n.t('process.button')"></span>
-          <span x-show="uploading" class="inline-flex items-center gap-1">
-            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            <span x-text="$store.i18n.t('process.uploading')"></span>
-          </span>
-        </button>
+      <!-- Input source toggle: local path (default) vs upload file -->
+      <div class="flex gap-2 mb-4">
+        <button type="button" @click="inputMode = 'path'"
+                :class="inputMode === 'path' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
+                x-text="$store.i18n.t('process.input_path')"></button>
+        <button type="button" @click="inputMode = 'upload'"
+                :class="inputMode === 'upload' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
+                x-text="$store.i18n.t('process.input_upload')"></button>
       </div>
-      <p x-show="selectedFile" class="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
-        <span class="flex items-center gap-2 flex-wrap">
-          <span x-text="selectedFile.name"></span>
-          <span class="inline-flex items-center gap-0.5 font-medium text-gray-600 dark:text-gray-300" x-show="selectedFile.duration">
-            <svg class="w-3.5 h-3.5"><use href="#icon-clock"></use></svg>
-            <span x-text="fmtDuration(selectedFile.duration)"></span>
-          </span>
-        </span>
-        <span class="flex items-center gap-2 flex-wrap">
-          <span x-text="$store.i18n.t('process.file_type') + ': ' + (selectedFile.type || 'unknown')"></span>
-          <span>·</span>
-          <span x-text="$store.i18n.t('process.file_size') + ': ' + fmtSize(selectedFile.size)"></span>
-          <span>·</span>
-          <span x-text="$store.i18n.t('process.file_modified') + ': ' + fmtDate(selectedFile.lastModified)"></span>
-        </span>
-      </p>
+
+      <!-- Local path mode (default): folder + load + file list -->
+      <template x-if="inputMode === 'path'">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2" x-text="$store.i18n.t('process.path_label')"></label>
+          <div class="flex items-center gap-3">
+            <input type="text" name="local_path" x-model="localPath"
+                   :placeholder="$store.i18n.t('process.path_placeholder')"
+                   class="block w-full text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                   :disabled="uploading">
+            <button type="button" @click="loadFolder"
+                    class="shrink-0 px-6 py-2 bg-gray-600 dark:bg-gray-700 text-white rounded-md text-sm font-medium
+                           hover:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed
+                           transition-colors cursor-pointer"
+                    :disabled="uploading || !localPath.trim()">
+              <span x-text="$store.i18n.t('process.load_button')"></span>
+            </button>
+          </div>
+          <label class="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
+            <input type="checkbox" x-model="recursive" class="rounded" :disabled="uploading">
+            <span x-text="$store.i18n.t('process.path_recursive')"></span>
+          </label>
+          <p class="mt-1 text-xs text-gray-400 dark:text-gray-500" x-text="$store.i18n.t('process.path_hint')"></p>
+
+          <!-- Loaded file list -->
+          <div x-show="folderFiles.length" class="mt-4">
+            <div class="flex items-center justify-between gap-3 mb-2">
+              <p class="text-sm font-medium text-gray-600 dark:text-gray-300">
+                <span x-text="$store.i18n.t('process.folder_files', {n: folderFiles.length})"></span>
+              </p>
+              <button type="button" @click="processBatch"
+                      class="shrink-0 px-5 py-2 bg-blue-600 text-white rounded-md text-sm font-medium
+                             hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
+                             transition-colors cursor-pointer"
+                      :disabled="uploading || !folderFiles.length">
+                <span x-text="$store.i18n.t('process.batch_button')"></span>
+              </button>
+            </div>
+            <ul class="divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg max-h-72 overflow-y-auto bg-white dark:bg-gray-800">
+              <template x-for="(f, i) in folderFiles" :key="f.path">
+                <li class="flex items-center gap-3 px-3 py-2 text-sm">
+                  <svg class="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"><use href="#icon-speaker-wave"></use></svg>
+                  <span class="flex-1 min-w-0">
+                    <span class="block truncate text-gray-800 dark:text-gray-100" x-text="f.name"></span>
+                    <span class="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-2">
+                      <span x-text="fmtSize(f.size)"></span>
+                      <template x-if="f.duration_seconds">
+                        <span class="inline-flex items-center gap-0.5">
+                          <svg class="w-3.5 h-3.5"><use href="#icon-clock"></use></svg>
+                          <span x-text="fmtDuration(f.duration_seconds)"></span>
+                        </span>
+                      </template>
+                    </span>
+                  </span>
+                  <button type="button" @click="processSingle(f.path)"
+                          class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300
+                                 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                          :disabled="uploading">
+                    <span x-text="$store.i18n.t('process.process_file')"></span>
+                  </button>
+                </li>
+              </template>
+            </ul>
+          </div>
+          <p x-show="folderError" class="mt-2 text-xs text-red-500" x-text="folderError"></p>
+        </div>
+      </template>
+
+      <!-- Upload mode -->
+      <template x-if="inputMode === 'upload'">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2" x-text="$store.i18n.t('process.upload_label')"></label>
+          <div class="flex items-center gap-3">
+            <input type="file" name="file" accept="audio/*" required
+                   @change="onFileSelected($event)"
+                   class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4
+                          file:rounded-md file:border-0 file:text-sm file:font-medium
+                          file:bg-blue-50 dark:file:bg-blue-900/40 file:text-blue-700 dark:file:text-blue-300 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/60
+                          cursor-pointer" :disabled="uploading">
+            <button type="submit"
+                    class="shrink-0 px-6 py-2 bg-blue-600 text-white rounded-md text-sm font-medium
+                           hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
+                           transition-colors cursor-pointer"
+                    :disabled="uploading">
+              <span x-show="!uploading" x-text="$store.i18n.t('process.button')"></span>
+              <span x-show="uploading" class="inline-flex items-center gap-1">
+                <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                <span x-text="$store.i18n.t('process.uploading')"></span>
+              </span>
+            </button>
+          </div>
+          <p x-show="selectedFile" class="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+            <span class="flex items-center gap-2 flex-wrap">
+              <span x-text="selectedFile.name"></span>
+              <span class="inline-flex items-center gap-0.5 font-medium text-gray-600 dark:text-gray-300" x-show="selectedFile.duration">
+                <svg class="w-3.5 h-3.5"><use href="#icon-clock"></use></svg>
+                <span x-text="fmtDuration(selectedFile.duration)"></span>
+              </span>
+            </span>
+            <span class="flex items-center gap-2 flex-wrap">
+              <span x-text="$store.i18n.t('process.file_type') + ': ' + (selectedFile.type || 'unknown')"></span>
+              <span>·</span>
+              <span x-text="$store.i18n.t('process.file_size') + ': ' + fmtSize(selectedFile.size)"></span>
+              <span>·</span>
+              <span x-text="$store.i18n.t('process.file_modified') + ': ' + fmtDate(selectedFile.lastModified)"></span>
+            </span>
+          </p>
+        </div>
+      </template>
     </form>
 
     <p class="text-xs text-gray-400 dark:text-gray-500 mb-4" x-text="$store.i18n.t('process.hint')"></p>
+
+    <!-- Batch progress (local path folder mode) -->
+    <div x-show="batch" class="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+      <div class="flex items-center justify-between gap-3 mb-2">
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-200" x-text="$store.i18n.t('process.batch_progress', {cur: batchIndex, total: batchTotal})"></p>
+        <p class="text-xs text-gray-400 dark:text-gray-500 truncate" x-text="batchFile"></p>
+      </div>
+      <div class="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5">
+        <div class="bg-blue-600 dark:bg-blue-400 h-2.5 rounded-full transition-all duration-300" :style="'width: ' + (batchTotal ? (batchIndex / batchTotal * 100) : 0) + '%'"></div>
+      </div>
+      <p x-show="batchError" class="mt-2 text-xs text-red-500" x-text="batchError"></p>
+    </div>
 
     <!-- Pipeline flow diagram -->
     <div class="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
@@ -342,12 +438,32 @@ document.addEventListener('alpine:init', () => {
       <div class="p-4 bg-green-50 dark:bg-green-900/30 rounded-md border border-green-200 dark:border-green-800">
         <p class="text-sm text-green-700 dark:text-green-300">
           <span x-text="$store.i18n.t('process.done')"></span>
-          <span x-text="$store.i18n.t('process.duration')"></span>: <span x-text="result.duration.toFixed(1)"></span>s |
-          <span x-text="$store.i18n.t('process.segments')"></span>: <span x-text="result.segments_count ?? result.segments?.length"></span>
-          <span x-show="result.vocals_separated"> | <span x-text="$store.i18n.t('process.vocals_separated')"></span></span>
+          <template x-if="result.batch">
+            <span>
+              <span x-text="$store.i18n.t('process.batch_done', {ok: result.succeeded, total: result.total})"></span>
+            </span>
+          </template>
+          <template x-if="!result.batch">
+            <span>
+              <span x-text="$store.i18n.t('process.duration')"></span>: <span x-text="result.duration.toFixed(1)"></span>s |
+              <span x-text="$store.i18n.t('process.segments')"></span>: <span x-text="result.segments_count ?? result.segments?.length"></span>
+              <span x-show="result.vocals_separated"> | <span x-text="$store.i18n.t('process.vocals_separated')"></span></span>
+            </span>
+          </template>
         </p>
       </div>
-      <div class="flex gap-3 flex-wrap">
+      <div x-show="result.batch" class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+        <div class="px-4 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-600 dark:text-gray-300" x-text="$store.i18n.t('process.batch_outputs')"></div>
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700 max-h-72 overflow-y-auto text-sm">
+          <template x-for="out in result.outputs" :key="out">
+            <li class="px-4 py-2 flex items-center gap-2 text-gray-600 dark:text-gray-300 break-all">
+              <svg class="w-4 h-4 shrink-0 text-green-600 dark:text-green-400"><use href="#icon-check-circle"></use></svg>
+              <span x-text="out"></span>
+            </li>
+          </template>
+        </ul>
+      </div>
+      <div x-show="!result.batch" class="flex gap-3 flex-wrap">
         <a :href="'/api/process/' + jobId + '/result'"
            class="inline-flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition-colors no-underline"
            x-text="$store.i18n.t('process.download_audio')"></a>
@@ -546,65 +662,57 @@ document.addEventListener('alpine:init', () => {
                 {% for b in tts_backends %}<option value="{{ b.value }}">{{ b.label }}</option>{% endfor %}
               </select>
             </div>
-            <!-- edge-tts fields -->
-            <template x-if="s.tts_backend === 'edge-tts'">
-              <div class="space-y-3">
-                <div>
-                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.voice')"></label>
-                  <select x-model="s.chinese_voice" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
-                    <template x-for="v in voices" :key="v">
-                      <option :value="v" x-text="v + ' (' + $store.i18n.t('voice.' + v) + ')'"></option>
-                    </template>
-                  </select>
-                </div>
-                <div class="grid grid-cols-3 gap-3">
-                  <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.rate')"></label>
-                    <input x-model="s.tts_rate" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="+0%">
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.volume')"></label>
-                    <input x-model="s.tts_volume" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="+0%">
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.pitch')"></label>
-                    <input x-model="s.tts_pitch" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="+0Hz">
-                  </div>
-                </div>
+            <!-- audiocpp TTS fields -->
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.family')"></label>
+                <select x-model="s.audiocpp_family" @change="syncVariantPicker()" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
+                  <template x-for="f in tts_families" :key="f.value">
+                    <option :value="f.value" x-text="f.label"></option>
+                  </template>
+                </select>
               </div>
-            </template>
-            <!-- indextts fields -->
-            <template x-if="s.tts_backend === 'indextts'">
-              <div class="space-y-3">
-                <div>
-                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.reference_select')"></label>
-                  <select x-model="refPicker" @change="s.indextts_reference_audio = refPicker ? 'references/' + refPicker : ''"
-                          class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
-                    <option value="" x-text="$store.i18n.t('tts.reference_placeholder')"></option>
-                    <template x-for="f in references" :key="f">
-                      <option :value="f" x-text="f"></option>
-                    </template>
-                  </select>
-                </div>
-                <div>
-                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.reference_audio')"></label>
-                  <input x-model="s.indextts_reference_audio" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.ref_audio_ph')">
-                </div>
-                <div>
-                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.repo_dir')"></label>
-                  <input x-model="s.indextts_repo_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.repo_dir_ph')">
-                </div>
-                <div>
-                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.model_dir')"></label>
-                  <input x-model="s.indextts_model_dir" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.model_dir_ph')">
-                </div>
-                <div>
-                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.cfg_path')"></label>
-                  <input x-model="s.indextts_cfg_path" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.cfg_path_ph')">
-                </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.variant')"></label>
+                <select x-model="variantPicker" @change="onVariantChange($event.target.value)" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
+                  <option value="" x-text="$store.i18n.t('tts.variant_auto')"></option>
+                  <template x-for="p in currentVariants" :key="p.id">
+                    <option :value="p.id" x-text="p.display_name + (p.installed ? '  \u2713' : '  \u25CB')"></option>
+                  </template>
+                </select>
+                <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-1" x-show="currentVariants.length === 0" x-text="$store.i18n.t('tts.variant_none')"></p>
+                <p class="text-[11px] mt-1"
+                   :class="currentVariantInstalled === false ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'"
+                   x-show="variantPicker && currentVariantInstalled !== null"
+                   x-text="currentVariantInstalled ? $store.i18n.t('tts.variant_installed') : $store.i18n.t('tts.variant_not_installed')"></p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.model')"></label>
+                <input x-model="s.audiocpp_model" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.model_ph')">
+                <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-1" x-text="$store.i18n.t('tts.model_hint')"></p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.reference_select')"></label>
+                <select x-model="refPicker" @change="s.audiocpp_reference_audio = refPicker ? 'references/' + refPicker : ''"
+                        class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
+                  <option value="" x-text="$store.i18n.t('tts.reference_placeholder')"></option>
+                  <template x-for="f in references" :key="f">
+                    <option :value="f" x-text="f"></option>
+                  </template>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.reference_audio')"></label>
+                <input x-model="s.audiocpp_reference_audio" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.ref_audio_ph')">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.reference_text')"></label>
+                <input x-model="s.audiocpp_reference_text" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" :placeholder="$store.i18n.t('tts.ref_text_ph')">
+              </div>
+              <div class="grid grid-cols-2 gap-3">
                 <div>
                   <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.language')"></label>
-                  <select x-model="s.indextts_language" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
+                  <select x-model="s.audiocpp_language" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
                     <option value="zh">中文 (zh)</option>
                     <option value="en">English (en)</option>
                     <option value="ja">日本語 (ja)</option>
@@ -613,12 +721,33 @@ document.addEventListener('alpine:init', () => {
                   </select>
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"><span x-text="$store.i18n.t('tts.speed')"></span>: <span x-text="s.indextts_speed"></span></label>
-                  <input x-model.number="s.indextts_speed" type="range" min="0.5" max="2.0" step="0.05" class="w-full dark:accent-blue-500">
-                  <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-1">&gt;1.0 变慢，&lt;1.0 变快</p>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.compute')"></label>
+                  <select x-model="s.audiocpp_backend" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm">
+                    <option value="cuda">CUDA (GPU)</option>
+                    <option value="cpu">CPU</option>
+                  </select>
                 </div>
               </div>
-            </template>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"><span x-text="$store.i18n.t('tts.speed')"></span>: <span x-text="s.audiocpp_speed"></span></label>
+                <input x-model.number="s.audiocpp_speed" type="range" min="0.5" max="2.0" step="0.05" class="w-full dark:accent-blue-500">
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.host')"></label>
+                  <input x-model="s.audiocpp_host" type="text" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="127.0.0.1">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.port')"></label>
+                  <input x-model.number="s.audiocpp_port" type="number" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="8088">
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" x-text="$store.i18n.t('tts.max_tokens')"></label>
+                <input x-model.number="s.audiocpp_max_tokens" type="number" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 rounded-md px-3 py-1.5 text-sm" placeholder="0 = 默认">
+              </div>
+            </div>
+            <!-- audiocpp fields are rendered above -->
           </div>
         </section>
 
@@ -942,6 +1071,16 @@ function processTab() {
     uploading: false,
     selectedFile: null,
     elapsed: 0,
+    inputMode: 'path',
+    localPath: '',
+    recursive: false,
+    folderFiles: [],
+    folderError: '',
+    batch: false,
+    batchIndex: 0,
+    batchTotal: 0,
+    batchFile: '',
+    batchError: '',
     _stageOrder: null,
     _es: null,
     _timer: null,
@@ -1003,24 +1142,75 @@ function processTab() {
       if (this._timer) { clearInterval(this._timer); this._timer = null; }
     },
 
-    async start(event) {
+    async loadFolder() {
+      this.folderError = '';
+      if (!this.localPath.trim()) { this.folderError = this.$store.i18n.t('error.missing_path'); return; }
+      try {
+        const res = await fetch('/api/process/path/list', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: this.localPath.trim(), recursive: this.recursive })
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || this.$store.i18n.t('error.load_failed'));
+        const data = await res.json();
+        this.folderFiles = data.files || [];
+      } catch (e) { this.folderError = e.message; this.folderFiles = []; }
+    },
+
+    async _submit(body) {
       this.uploading = true; this.error = null; this.completed = false;
       this.result = null; this.segments = [];
       this.stageLog = [];
       this.asrDone = false; this.translateDone = false;
       this.elapsed = 0;
       this.selectedFile = null;
+      this.batch = false; this.batchIndex = 0; this.batchTotal = 0; this.batchFile = ''; this.batchError = '';
       this.stages = this.stages.map(s => ({...s, status: 'pending'}));
       this.statusMessage = '';
-      const formData = new FormData(event.target);
       try {
-        const res = await fetch('/api/process', { method: 'POST', body: formData });
+        const res = await fetch('/api/process/path', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
         if (!res.ok) throw new Error((await res.json()).detail || this.$store.i18n.t('error.upload_failed'));
         const { job_id } = await res.json();
         this.jobId = job_id;
       } catch (e) { this.error = e.message; this.uploading = false; return; }
       this.uploading = false;
       this.connectSSE();
+    },
+
+    processSingle(filePath) {
+      this._submit({ path: filePath });
+    },
+
+    processBatch() {
+      if (!this.folderFiles.length) return;
+      this._submit({ paths: this.folderFiles.map(f => f.path) });
+    },
+
+    async start(event) {
+      if (this.inputMode === 'upload') {
+        this.uploading = true; this.error = null; this.completed = false;
+        this.result = null; this.segments = [];
+        this.stageLog = [];
+        this.asrDone = false; this.translateDone = false;
+        this.elapsed = 0;
+        this.selectedFile = null;
+        this.batch = false; this.batchIndex = 0; this.batchTotal = 0; this.batchFile = ''; this.batchError = '';
+        this.stages = this.stages.map(s => ({...s, status: 'pending'}));
+        this.statusMessage = '';
+        const formData = new FormData(event.target);
+        try {
+          const res = await fetch('/api/process', { method: 'POST', body: formData });
+          if (!res.ok) throw new Error((await res.json()).detail || this.$store.i18n.t('error.upload_failed'));
+          const { job_id } = await res.json();
+          this.jobId = job_id;
+        } catch (e) { this.error = e.message; this.uploading = false; return; }
+        this.uploading = false;
+        this.connectSSE();
+      }
     },
 
     connectSSE() {
@@ -1032,6 +1222,19 @@ function processTab() {
       es.onmessage = (e) => {
         const d = JSON.parse(e.data);
         if (d.type === 'heartbeat') return;
+        if (d.type === 'batch') {
+          this.batch = true;
+          this.batchIndex = d.index;
+          this.batchTotal = d.total;
+          this.batchFile = d.file || '';
+          if (d.status === 'running') this.batchError = '';
+          if (d.status === 'error') this.batchError = d.message || this.$store.i18n.t('error.upload_failed');
+          if (d.status === 'running') {
+            this.segments = [];
+            this.stages = this.stages.map(s => ({...s, status: 'pending'}));
+          }
+          return;
+        }
         if (d.type === 'progress') {
           if (d.cached && !d.message) d.message = this.$store.i18n.t('stage.cached');
           this.stages = this.stages.map(s => {
@@ -1070,9 +1273,11 @@ function processTab() {
 function settingsTab() {
   return {
     s: {{ settings_json | safe }},
-    voices: {{ chinese_voices_json | safe }},
     references: {{ references_audio_json | safe }},
+    tts_families: {{ tts_families_json | safe }},
+    audiocpp_packages: {{ audiocpp_packages_json | safe }},
     refPicker: '',
+    variantPicker: '',
     subtab: 'asr',
     asrOpen: true, transOpen: true, ttsOpen: true,
     showKey: false,
@@ -1083,8 +1288,35 @@ function settingsTab() {
     mixModeDesc(v) { return this.$store.i18n.t('mix_mode.' + v); },
 
     init() {
-      const m = /^references[\\/](.+)$/.exec(this.s.indextts_reference_audio || '');
+      const m = /^references[\\/](.+)$/.exec(this.s.audiocpp_reference_audio || '');
       if (m && this.references.includes(m[1])) this.refPicker = m[1];
+      this.syncVariantPicker();
+    },
+
+    // Variants (packages) for the currently selected audiocpp family.
+    get currentVariants() {
+      return this.audiocpp_packages[this.s.audiocpp_family] || [];
+    },
+    // Whether the currently picked variant's model file exists locally.
+    // Returns null when no variant is selected (auto / custom path).
+    get currentVariantInstalled() {
+      if (!this.variantPicker) return null;
+      const p = this.currentVariants.find(p => p.id === this.variantPicker);
+      return p ? p.installed : null;
+    },
+    // Re-derive the variant picker from the current audiocpp_model path.
+    // Called on init and whenever the family changes.
+    syncVariantPicker() {
+      const cur = (this.s.audiocpp_model || '').replace(/\\/g, '/');
+      const pkgs = this.audiocpp_packages[this.s.audiocpp_family] || [];
+      const found = pkgs.find(p => p.model_path === cur);
+      this.variantPicker = found ? found.id : '';
+    },
+    onVariantChange(v) {
+      if (!v) { this.s.audiocpp_model = ''; return; }
+      const pkgs = this.audiocpp_packages[this.s.audiocpp_family] || [];
+      const p = pkgs.find(p => p.id === v);
+      if (p) this.s.audiocpp_model = p.model_path;
     },
 
     async save() {

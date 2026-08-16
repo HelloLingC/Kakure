@@ -11,7 +11,6 @@ from fastapi.templating import Jinja2Templates
 
 from kakure.config import (
     ASRBackend,
-    ChineseVoice,
     DemucsModel,
     KotobaWhisperModel,
     MixMode,
@@ -21,6 +20,7 @@ from kakure.config import (
     _settings_to_dict,
     load_settings,
 )
+from kakure.tts import AUDIOCPP_FAMILY_CHOICES, AUDIOCPP_FAMILY_DOWNLOADS, audiocpp_family_packages
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -68,8 +68,18 @@ def _enum_options(enum_cls) -> list[dict]:
     return [{"value": e.value, "label": e.value} for e in enum_cls]
 
 
-def _voice_options() -> list[str]:
-    return [v.value for v in ChineseVoice]
+def _tts_family_options() -> list[dict]:
+    labels = {
+        "qwen3_tts": "Qwen3-TTS 1.7B (q8_0, 中文/日英)",
+        "index_tts2": "IndexTTS2 (声音克隆)",
+        "glm_tts": "GLM-TTS (中文)",
+        "outetts": "Outetts (零样本克隆)",
+        "vibevoice": "VibeVoice (长音频)",
+    }
+    return [
+        {"value": f, "label": labels.get(f, f)}
+        for f in AUDIOCPP_FAMILY_CHOICES
+    ]
 
 
 def _mix_mode_options() -> list[dict]:
@@ -109,7 +119,9 @@ async def index(request: Request):
         "settings_json": json.dumps(_settings_to_dict(settings)),
         "pipeline_stages_json": json.dumps(pipeline_stages),
         "mix_modes": _mix_mode_options(),
-        "chinese_voices_json": json.dumps(_voice_options()),
+        "tts_families": _tts_family_options(),
+        "tts_families_json": json.dumps(_tts_family_options()),
+        "audiocpp_packages_json": json.dumps(audiocpp_family_packages()),
         "references_audio_json": json.dumps(_reference_audio_options()),
         "asr_backends": _enum_options(ASRBackend),
         "whisper_models": _enum_options(WhisperModelSize),

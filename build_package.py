@@ -12,15 +12,13 @@ machine (Windows):
     python build_package.py [options]
 
 Options:
-    --core-only         Skip kotoba-whisper / IndexTTS / Demucs extras
-                        (smaller package, faster-whisper + edge-tts only)
+    --core-only         Skip kotoba-whisper / Demucs extras
+                        (smaller package, faster-whisper only)
     --cuda              Install the CUDA build of PyTorch (default: CPU)
     --mirror            Use the Tsinghua PyPI mirror for downloads
     --no-whisper-models Do not bundle the default whisper models
-    --with-indextts     Bundle IndexTTS (main checkpoint + aux models) and
-                        the references/ folder; default TTS becomes indextts
-    --full-models       Bundle every model in the local HF cache
-                        (implies --with-indextts)
+    --full-models       Bundle every model in the local HF cache (incl. the
+                        audiocpp TTS GGUF) so the first run needs no downloads
     --no-zip            Keep the folder but skip the final zip
     --out DIR           Output directory (default: <repo>/dist)
 
@@ -77,49 +75,15 @@ DEFAULT_WHISPER_REPOS = [
 ]
 DEFAULT_WHISPER_MODELS = ["large-v3", "medium", "small", "base"]
 
-# Auxiliary models IndexTTS-2.5 needs besides the main checkpoint (all resolve
-# through the HF cache via HF_ENDPOINT / apply_model_env routing). At runtime
-# ``ensure_models_available`` migrates them into <indextts_model_dir>/hf_cache/.
-INDEX_TTS_AUX_REPOS = [
-    "models--facebook--w2v-bert-2.0",
-    "models--amphion--MaskGCT",
-    "models--funasr--campplus",
-    "models--nvidia--bigvgan_v2_22khz_80band_256x",
-]
-
-# Python deps IndexTTS-2.5's inference path needs at runtime. The official
-# repo pins a much larger set (keras, tensorboard, matplotlib, opencv, pandas,
-# ...) for its WebUI/training; shipping only these keeps the package lean and
-# avoids version conflicts with faster-whisper/kotoba/demucs.
-INDEX_TTS_DEPS = [
-    "accelerate>=1.0",
-    "descript-audiotools>=0.7",
-    "einops>=0.8",
-    "fugashi>=1.2",
-    "librosa>=0.10",
-    "modelscope>=1.20",
-    "munch>=4.0",
-    "nemo-text-processing>=1.1",
-    "omegaconf>=2.3",
-    "openai-whisper>=20231117",
-    "pyyaml>=6.0",
-    "safetensors>=0.4",
-    "scipy>=1.10",
-    "sentencepiece>=0.2",
-    "tiktoken>=0.5",
-    "unidic-lite>=1.0",
-    "wetext>=0.0.9",
-    "transformers==4.52.1",
-]
-
-# Official index-tts repository (installed by cloning, not from PyPI).
-INDEX_TTS_GIT = "https://github.com/index-tts/index-tts.git"
-# Working copy Kakure keeps of the official repo for the portable build.
-INDEX_TTS_CLONE = ROOT / "indextts-src"
+# audiocpp engine folder (audio.cpp server + CUDA DLLs), bundled verbatim from
+# the repo root. The TTS model itself is a GGUF downloaded via the Models tab,
+# or pre-bundled from the local HF cache (see AUDIOCPP_MODEL_REPO below).
+AUDIOCPP_SRC = ROOT / "audiocpp"
+# HF cache directory for audiocpp's default Qwen3-TTS GGUF (audio-cpp/audio.cpp-gguf).
+AUDIOCPP_MODEL_REPO = "models--audio-cpp--audio.cpp-gguf"
 
 # Everything Kakure's Models tab can use, in HF cache directory form.
-# IndexTeam/IndexTTS-2.5 (the main checkpoint) is intentionally absent: it is
-# bundled by bundle_indextts() from the dev tree (IndexTTS-2.5/) or HF cache.
+# Whichever of these exist (completely) in the local HF cache get bundled.
 FULL_MODEL_REPOS = [
     "models--Systran--faster-whisper-tiny",
     "models--Systran--faster-whisper-base",
@@ -131,10 +95,7 @@ FULL_MODEL_REPOS = [
     "models--kotoba-tech--kotoba-whisper-v2.1",
     "models--kotoba-tech--kotoba-whisper-v2.2",
     "models--adefossez--HTDemucs",
-    "models--facebook--w2v-bert-2.0",
-    "models--amphion--MaskGCT",
-    "models--funasr--campplus",
-    "models--nvidia--bigvgan_v2_22khz_80band_256x",
+    "models--audio-cpp--audio.cpp-gguf",
 ]
 
 TOTAL_STEPS = 10
@@ -243,66 +204,6 @@ def bootstrap_pip(py_exe: Path, mirror: bool) -> None:
     get_pip.unlink(missing_ok=True)
 
 
-def vendor_from_dev_venv(out: Path) -> None:
-    """Vendor prebuilt binary packages from the dev venv into the package.
-
-    Some dependencies ship no Windows wheel and would otherwise need a C++
-    toolchain at build time:
-
-    - pynini (nemo-text-processing dep for IndexTTS): no PyPI wheel at all.
-    - cdifflib: no cp312-win wheel (sdist only, C extension).
-
-    The dev venv holds locally built cp312 binaries; copying them lets pip
-    see each requirement as satisfied instead of trying to compile it.
-    """
-    venv_sp = ROOT / ".venv" / "Lib" / "site-packages"
-    dest = out / "python" / "Lib" / "site-packages"
-    dest.mkdir(parents=True, exist_ok=True)
-    missing = []
-    for pkg in ("pynini", "cdifflib"):
-        src_pkg = venv_sp / pkg
-        src_mod = venv_sp / f"{pkg}.py"
-        if not (src_pkg.is_dir() or src_mod.is_file()):
-            missing.append(pkg)
-            continue
-        if src_pkg.is_dir():
-            shutil.copytree(
-                src_pkg,
-                dest / pkg,
-                ignore=shutil.ignore_patterns("__pycache__"),
-                dirs_exist_ok=True,
-            )
-        if src_mod.is_file():
-            shutil.copy2(src_mod, dest / src_mod.name)
-        # Extension modules sit at the site-packages root in the dev venv;
-        # same-dir DLL resolution loads them (pynini also needs _pywrapfst).
-        pyds = list(venv_sp.glob(f"_{pkg}*.pyd")) + list(venv_sp.glob(f"{pkg}*.pyd"))
-        if pkg == "pynini":
-            pyds += list(venv_sp.glob("_pywrapfst*.pyd"))
-        for pyd in pyds:
-            shutil.copy2(pyd, dest / pyd.name)
-        for di in venv_sp.glob(f"{pkg}-*.dist-info"):
-            shutil.copytree(di, dest / di.name, dirs_exist_ok=True)
-        print(f"  Vendored prebuilt {pkg} from the dev venv.", flush=True)
-    # OpenFst DLLs (pynini's C++ runtime) also sit at the site-packages root.
-    if (venv_sp / "pynini").is_dir():
-        for dll in (
-            list(venv_sp.glob("fst*.dll"))
-            + list(venv_sp.glob("dl.dll"))
-            + list(venv_sp.glob("libgcc_s_seh-1.dll"))
-            + list(venv_sp.glob("libwinpthread-1.dll"))
-        ):
-            shutil.copy2(dll, dest / dll.name)
-    if missing:
-        print(
-            "[ERROR] Prebuilt packages not found in the dev venv: "
-            + ", ".join(missing)
-        )
-        print("        Install them once in the dev environment (see README), or")
-        print("        build with --core-only to exclude IndexTTS/Demucs.")
-        sys.exit(1)
-
-
 def install_dependencies(
     out: Path, py_exe: Path, core_only: bool, cuda: bool, mirror: bool
 ) -> None:
@@ -332,12 +233,6 @@ def install_dependencies(
         print("[ERROR] Failed to install the build backends.")
         sys.exit(1)
 
-    if not core_only:
-        vendor_from_dev_venv(out)
-        # IndexTTS-2.5: ensure the official clone exists so it can be installed
-        # into the embedded runtime and bundled as source.
-        ensure_indextts_clone()
-
     cmd = [
         str(py_exe),
         "-m",
@@ -346,7 +241,7 @@ def install_dependencies(
         "--no-input",
         "--no-warn-script-location",
         "--no-build-isolation",
-        f"{ROOT}[kotoba,indextts,demucs]" if not core_only else str(ROOT),
+        f"{ROOT}[kotoba,demucs]" if not core_only else str(ROOT),
     ]
     if cuda:
         cmd += ["--extra-index-url", PYTORCH_CUDA_INDEX]
@@ -355,8 +250,6 @@ def install_dependencies(
         # local suffix, which PEP 440 sorts higher, so pip picks the CPU
         # wheels while everything else still resolves from PyPI.
         cmd += ["--extra-index-url", PYTORCH_CPU_INDEX]
-    # The indextts2-inference wheel was previously appended here; the official
-    # clone replaces it entirely (see INDEX_TTS_CLONE above).
 
     if run(cmd, env=env) != 0:
         print(
@@ -364,45 +257,6 @@ def install_dependencies(
             "re-run with --mirror."
         )
         sys.exit(1)
-
-    if not core_only:
-        # The official index-tts repo is a source checkout (uv-managed project),
-        # not a PyPI package. Install the `indextts` package itself with
-        # --no-deps so pip keeps our pinned versions; the curated dep list is
-        # installed separately below.
-        clone_cmd = [
-            str(py_exe),
-            "-m",
-            "pip",
-            "install",
-            "--no-input",
-            "--no-warn-script-location",
-            "--no-build-isolation",
-            "--no-deps",
-            str(INDEX_TTS_CLONE),
-        ]
-        if run(clone_cmd, env=env) != 0:
-            print("[ERROR] Failed to install the indextts package from the official clone.")
-            sys.exit(1)
-
-        # Install the curated IndexTTS inference deps (torch/torchaudio come
-        # from the pytorch index already selected above).
-        extra_cmd = [
-            str(py_exe),
-            "-m",
-            "pip",
-            "install",
-            "--no-input",
-            "--no-warn-script-location",
-        ]
-        if cuda:
-            extra_cmd += ["--extra-index-url", PYTORCH_CUDA_INDEX]
-        else:
-            extra_cmd += ["--extra-index-url", PYTORCH_CPU_INDEX]
-        extra_cmd += INDEX_TTS_DEPS
-        if run(extra_cmd, env=env) != 0:
-            print("[ERROR] Failed to install IndexTTS inference dependencies.")
-            sys.exit(1)
 
     # Provenance: record the exact versions that went into this package.
     lock = ROOT / "dist" / "requirements-lock.txt"
@@ -510,115 +364,33 @@ def copy_vc_runtime(py_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def ensure_indextts_clone() -> None:
-    """Ensure the official index-tts repo is checked out in the dev tree.
+def bundle_audiocpp(out: Path) -> None:
+    """Copy the audiocpp TTS engine (audio.cpp server + CUDA DLLs) into the package.
 
-    The official IndexTTS-2.5 is a source project (git clone + uv sync), not a
-    PyPI package. The portable build pip-installs ``indextts`` from this clone
-    into the embedded runtime and ships the source so the subprocess bridge can
-    load it at runtime.
+    The engine ships as a prebuilt folder at the repo root (./audiocpp). The GGUF
+    model is downloaded via the Models tab at runtime, or pre-bundled from the
+    local HF cache by ``bundle_models`` (see AUDIOCPP_MODEL_REPO). Reference audio
+    used for voice cloning is copied from the repo's references/ folder.
     """
-    if (INDEX_TTS_CLONE / "pyproject.toml").exists():
-        return
-    git = shutil.which("git")
-    if git is None:
-        print("[ERROR] git was not found; IndexTTS-2.5 needs it. Install Git, or "
-              "build with --core-only.")
-        sys.exit(1)
-    INDEX_TTS_CLONE.parent.mkdir(parents=True, exist_ok=True)
-    print(f"  Cloning the official index-tts repo -> {INDEX_TTS_CLONE} ...", flush=True)
-    if run([git, "clone", "--depth", "1", INDEX_TTS_GIT, str(INDEX_TTS_CLONE)]) != 0:
-        print("[ERROR] Failed to clone the official index-tts repo.")
-        sys.exit(1)
-
-
-def _hf_cache_snapshot(repo_dir_name: str) -> Path | None:
-    """Return the local snapshot directory for an HF cache repo, or None.
-
-    Prefers the commit hash recorded in ``refs/main``; falls back to the single
-    snapshot when there is no ambiguity.
-    """
-    src = HF_CACHE / repo_dir_name
-    if not src.is_dir():
-        return None
-    snapshots = src / "snapshots"
-    if not snapshots.is_dir():
-        return None
-    ref = src / "refs" / "main"
-    if ref.is_file():
-        commit = ref.read_text(encoding="utf-8").strip()
-        snap = snapshots / commit
-        if snap.is_dir() and list(snap.iterdir()):
-            return snap
-    entries = [e for e in snapshots.iterdir() if e.is_dir()]
-    return entries[0] if len(entries) == 1 else None
-
-
-def bundle_indextts(out: Path) -> str:
-    """Bundle IndexTTS-2.5 (official source + main checkpoint + aux + reference).
-
-    Returns ``"bundled"`` when the main checkpoint was bundled, else ``""``.
-    The official repo source is copied to ``models/indextts-src/`` (wired to
-    ``indextts_repo_dir``). The main checkpoint goes to the flat
-    ``models/indextts/`` layout (wired to ``indextts_model_dir``). Aux models
-    stay in the HF cache (``models/huggingface/hub/``);
-    ``ensure_models_available`` migrates them into
-    ``models/indextts/hf_cache/`` on first use. Reference audio in the dev
-    tree's ``references/`` folder is copied to ``references/``.
-    """
-    dest_hub = out / "models" / "huggingface" / "hub"
-    dest_main = out / "models" / "indextts"
-    main_source = ""
-
-    ensure_indextts_clone()
-    if INDEX_TTS_CLONE.is_dir():
+    # Engine binaries (audiocpp_server.exe + CUDA/DLLs).
+    if AUDIOCPP_SRC.is_dir():
         shutil.copytree(
-            INDEX_TTS_CLONE,
-            out / "models" / "indextts-src",
-            ignore=shutil.ignore_patterns(
-                "__pycache__", ".git", ".venv", "checkpoints", "examples", "tools"
-            ),
+            AUDIOCPP_SRC,
+            out / "audiocpp",
+            ignore=shutil.ignore_patterns("__pycache__", ".git", "*.log"),
             dirs_exist_ok=True,
         )
-        print("  Bundled the official index-tts repo source.", flush=True)
-
-    snapshot = _hf_cache_snapshot("models--IndexTeam--IndexTTS-2.5")
-    if snapshot:
-        shutil.copytree(
-            snapshot,
-            dest_main,
-            ignore=shutil.ignore_patterns("__pycache__", ".cache"),
-            dirs_exist_ok=True,
-        )
-        print("  Bundled IndexTTS-2.5 main checkpoint (from the HF cache).", flush=True)
-        main_source = "bundled"
+        print("  Bundled the audiocpp TTS engine.", flush=True)
     else:
-        # Fallback: the dev tree may hold a manually downloaded copy.
-        src_main = ROOT / "IndexTTS-2.5"
-        if src_main.is_dir():
-            shutil.copytree(
-                src_main,
-                dest_main,
-                ignore=shutil.ignore_patterns("__pycache__", ".cache"),
-                dirs_exist_ok=True,
-            )
-            print(
-                "  Bundled IndexTTS-2.5 main checkpoint (from dev tree IndexTTS-2.5/).",
-                flush=True,
-            )
-            main_source = "bundled"
-        else:
-            print(
-                "  [WARN] IndexTTS-2.5 main checkpoint not found (HF cache or dev "
-                "tree IndexTTS-2.5/); IndexTTS will download it on first use.",
-                flush=True,
-            )
-    for repo in INDEX_TTS_AUX_REPOS:
-        _bundle_hf_repo(repo, dest_hub)
+        print(
+            "  [WARN] ./audiocpp not found in the repo; TTS engine will be missing.",
+            flush=True,
+        )
+
+    # Reference audio for voice cloning.
     refs = ROOT / "references"
     if refs.is_dir():
         shutil.copytree(refs, out / "references", dirs_exist_ok=True)
-    return main_source
 
 
 def _reference_audio_name(out: Path) -> str:
@@ -648,16 +420,14 @@ def _packaged_config(whisper_default: str, overrides: dict[str, str] | None = No
     return out
 
 
-def write_app_files(out: Path, whisper_default: str, indextts_main: str) -> None:
+def write_app_files(out: Path, whisper_default: str) -> None:
     step(6, "Writing app files and config ...")
     overrides = {}
-    if indextts_main:
-        overrides["tts_backend"] = '"indextts"'
-        overrides["indextts_repo_dir"] = '"models/indextts-src"'
-        overrides["indextts_model_dir"] = '"models/indextts"'
-        ref = _reference_audio_name(out)
-        if ref:
-            overrides["indextts_reference_audio"] = f'"references/{ref}"'
+    # TTS is always performed by the audiocpp engine in this build.
+    overrides["tts_backend"] = '"audiocpp"'
+    ref = _reference_audio_name(out)
+    if ref:
+        overrides["audiocpp_reference_audio"] = f'"references/{ref}"'
     (out / "kakure.toml").write_text(_packaged_config(whisper_default, overrides), encoding="utf-8")
     shutil.copyfile(ROOT / "kakure.toml.example", out / "kakure.toml.example")
     if (ROOT / "start-kakure.bat").exists():
@@ -769,7 +539,7 @@ def make_zip(out: Path, version: str, zip_dir: Path | None = None) -> Path:
 def smoke_test(py_exe: Path) -> None:
     step(8, "Smoke-testing the packaged runtime ...")
     code = (
-        "import sys, kakure, faster_whisper, edge_tts, pydub, uvicorn, fastapi, pydantic; "
+        "import sys, kakure, faster_whisper, pydub, httpx, uvicorn, fastapi, pydantic; "
         "print('OK  kakure', kakure.__file__)"
     )
     if run([str(py_exe), "-c", code]) != 0:
@@ -797,7 +567,7 @@ def smoke_test(py_exe: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build the Kakure portable package (整合包).")
     parser.add_argument(
-        "--core-only", action="store_true", help="skip kotoba/indextts/demucs extras"
+        "--core-only", action="store_true", help="skip kotoba/demucs extras"
     )
     parser.add_argument("--cuda", action="store_true", help="install CUDA PyTorch (default: CPU)")
     parser.add_argument("--mirror", action="store_true", help="use the Tsinghua PyPI mirror")
@@ -805,15 +575,9 @@ def main() -> None:
         "--no-whisper-models", action="store_true", help="do not bundle whisper models"
     )
     parser.add_argument(
-        "--with-indextts",
-        action="store_true",
-        help="bundle IndexTTS (main checkpoint + aux models) and reference "
-        "audio; default TTS backend becomes indextts",
-    )
-    parser.add_argument(
         "--full-models",
         action="store_true",
-        help="bundle every model in the local HF cache (implies --with-indextts)",
+        help="bundle every model in the local HF cache (incl. the audiocpp TTS GGUF)",
     )
     parser.add_argument("--no-zip", action="store_true", help="skip the final zip")
     parser.add_argument(
@@ -861,10 +625,8 @@ def main() -> None:
     setup_ffmpeg(out)
     copy_vc_runtime(py_exe.parent)
     whisper_default = bundle_models(out, args.full_models, args.no_whisper_models)
-    indextts_main = ""
-    if args.full_models or args.with_indextts:
-        indextts_main = bundle_indextts(out)
-    write_app_files(out, whisper_default, indextts_main)
+    bundle_audiocpp(out)
+    write_app_files(out, whisper_default)
     smoke_test(py_exe)
 
     if args.no_zip:

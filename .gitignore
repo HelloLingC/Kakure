@@ -44,6 +44,10 @@ indextts2.5/
 # Old vendored wheel (replaced by the official install method)
 /indextts2_inference-*.whl
 
+# Bundled binaries / model downloads (download on demand, not committed)
+/audiocpp/
+/bin/
+
 # Audio files (for testing)
 *.mp3
 *.wav

@@ -10,7 +10,7 @@ Translates Japanese ASMR voice audio into bilingual voice audio by overlaying a 
 
 - **ASR**: Japanese speech recognition with timestamps — choose between faster-whisper (multilingual) or kotoba-whisper (Japanese-optimized)
 - **Translation**: Japanese-to-Chinese translation (OpenAI GPT)
-- **TTS**: Chinese voice generation — choose between edge-tts (cloud, pre-built voices) or IndexTTS-2.5 (local GPU, voice cloning)
+- **TTS**: Chinese voice generation via audiocpp (audio.cpp engine, local GPU, supports voice cloning)
 - **Vocal Separation**: Optional Demucs-based separation of vocals from background for cleaner mixing
 - **Mixing**: Four mixing modes for bilingual output:
   - `dual`: Japanese left channel, Chinese right channel
@@ -39,16 +39,15 @@ Build it yourself (on Windows):
 
 ```bash
 python build_package.py                    # CPU build (default, includes all optional components)
-python build_package.py --core-only        # core only (faster-whisper + edge-tts)
+python build_package.py --core-only        # core only (faster-whisper ASR)
 python build_package.py --cuda             # CUDA PyTorch (needs an NVIDIA GPU)
 python build_package.py --mirror           # use the Tsinghua PyPI mirror
-python build_package.py --with-indextts    # bundle IndexTTS-2.5 (models + reference audio, default TTS switches to it)
 python build_package.py --full-models      # bundle every model in the local HF cache
 python build_package.py --zip-out DIR      # write the zip to another directory (when short on disk space)
 ```
 
 Output goes to `dist/`: the `Kakure/` folder and the `Kakure-整合包-vX.zip` archive.
-The packaging machine needs a prepared `.venv` (provides prebuilt pynini/cdifflib binaries) and a local HF model cache.
+The packaging machine needs a prepared `.venv` and a local HF model cache (for bundling Whisper and audiocpp GGUF models).
 
 ## Windows One-Click Install (No Technical Background Needed)
 
@@ -66,8 +65,8 @@ Don't want to touch the command line? Use this:
 
 > **Tips**
 > - The first run downloads the Whisper model (large-v3 ~3GB), please be patient
-> - The one-click install only installs core features (faster-whisper + edge-tts, CPU-friendly)
-> - For GPU advanced features (IndexTTS-2.5 voice cloning, Demucs vocal separation, kotoba-whisper)
+> - The one-click install only installs core features (faster-whisper ASR, CPU-friendly)
+> - For GPU advanced features (audiocpp voice cloning, Demucs vocal separation, kotoba-whisper)
 >   see the "Manual Install" section below and run `pip install -e ".[optional]"` in the venv
 
 ## Installation
@@ -83,10 +82,9 @@ pip install -e ".[dev]"
 # For kotoba-whisper ASR backend (optional):
 pip install -e ".[kotoba]"
 
-# For IndexTTS-2.5 TTS backend (optional, requires NVIDIA GPU + git + uv):
-# Official install method: git clone + uv sync --all-extras (own environment)
-pip install -e ".[indextts]"   # no-op marker, installs nothing
-kakure install-indextts        # clones the official repo and installs deps
+# TTS uses the audiocpp (audio.cpp) engine — bundled, no pip extra required.
+# It needs an NVIDIA GPU + CUDA runtime; the model GGUF is downloaded from the
+# Models tab in the web UI (HuggingFace Hub), or set audiocpp_model in kakure.toml.
 
 # For vocal separation with Demucs (optional, requires GPU for speed):
 pip install -e ".[demucs]"
@@ -129,17 +127,24 @@ OPENAI_API_KEY=sk-...
 # ASR backend: "faster-whisper" or "kotoba-whisper"
 KAKURE_ASR_BACKEND=faster-whisper
 
-# TTS backend: "edge-tts" or "indextts"
-KAKURE_TTS_BACKEND=edge-tts
+# TTS backend is fixed to audiocpp (audio.cpp engine)
+KAKURE_TTS_BACKEND=audiocpp
+
+# audiocpp TTS settings
+KAKURE_AUDIOCPP_HOST=127.0.0.1
+KAKURE_AUDIOCPP_PORT=8088
+KAKURE_AUDIOCPP_BACKEND=cuda        # "cuda" or "cpu"
+KAKURE_AUDIOCPP_FAMILY=qwen3_tts
+KAKURE_AUDIOCPP_MODEL=               # leave empty for auto-download via the Models tab
+KAKURE_AUDIOCPP_LANGUAGE=zh
+KAKURE_AUDIOCPP_REFERENCE_AUDIO=references/indextts_reference.wav
+KAKURE_AUDIOCPP_REFERENCE_TEXT=
+KAKURE_AUDIOCPP_SPEED=1.0
+KAKURE_AUDIOCPP_MAX_TOKENS=0        # 0 = server default; raise if Chinese output is truncated
 
 # Optional settings
 KAKURE_WHISPER_MODEL=large-v3
 KAKURE_MIX_MODE=overlay
-KAKURE_CHINESE_VOICE=zh-CN-XiaoxiaoNeural
-
-# IndexTTS settings (when KAKURE_TTS_BACKEND=indextts)
-KAKURE_INDEXTTS_REFERENCE_AUDIO=path/to/reference_voice.wav
-KAKURE_INDEXTTS_MODEL_DIR=  # Leave empty for auto-download
 
 # Vocal separation (Demucs)
 KAKURE_SEPARATE_VOCALS=false

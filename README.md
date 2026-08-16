@@ -10,7 +10,7 @@
 
 - **ASR（语音识别）**：可选 faster-whisper（多语言）或 kotoba-whisper（日语优化）
 - **AI 翻译**：OpenAI GPT
-- **TTS（语音合成）**：中文语音生成——可选 edge-tts（云端、预制音色）或 IndexTTS-2.5（本地 GPU、声音克隆）
+- **TTS（语音合成）**：中文语音生成——基于 audiocpp（audio.cpp 引擎，本地 GPU、支持音色克隆）
 - **人声分离**：可选基于 Demucs 的人声/背景分离，混合更干净
 - **混合模式**：四种双语输出模式：
   - `dual`：日语左声道，中文右声道
@@ -39,16 +39,15 @@
 
 ```bash
 python build_package.py                    # CPU 版（默认，包含全部可选组件）
-python build_package.py --core-only        # 只含核心功能（faster-whisper + edge-tts）
+python build_package.py --core-only        # 只含核心功能（faster-whisper）
 python build_package.py --cuda             # PyTorch 用 CUDA 版（需要 NVIDIA 显卡）
 python build_package.py --mirror           # 用清华 PyPI 镜像加速下载
-python build_package.py --with-indextts    # 打包 IndexTTS-2.5（内置模型+参考音频，TTS 默认切到 IndexTTS）
-python build_package.py --full-models      # 把本机 HF 缓存里的模型全部打进包
+python build_package.py --full-models      # 把本机 HF 缓存里的模型全部打进包（含 audiocpp TTS GGUF）
 python build_package.py --zip-out DIR      # zip 输出到其他目录（磁盘空间不够时用）
 ```
 
 输出在 `dist/`：文件夹 `Kakure/` 和压缩包 `Kakure-整合包-vX.zip`。
-打包机需要提前准备：`.venv` 开发环境（提供 pynini/cdifflib 预编译二进制）和本地 HF 模型缓存。
+打包机需要提前准备：本地 HF 模型缓存（含 Whisper / kotoba-whisper / Demucs / audiocpp TTS 的 GGUF）。
 
 ## Windows 一键安装（小白专用）
 
@@ -66,8 +65,8 @@ python build_package.py --zip-out DIR      # zip 输出到其他目录（磁盘�
 
 > **提示**
 > - 首次运行会自动下载 Whisper 模型（large-v3 约 3GB），请耐心等待
-> - 一键安装默认只装核心功能（faster-whisper + edge-tts，CPU 可用）
-> - 需要 GPU 进阶功能（IndexTTS 声音克隆、Demucs 人声分离、kotoba-whisper）的
+> - 一键安装默认只装核心功能（faster-whisper，CPU 可用）
+> - 需要 GPU 进阶功能（audiocpp 音色克隆、Demucs 人声分离、kotoba-whisper）的
 >   用户请见下方「手动安装」说明，在虚拟环境中 `pip install -e ".[可选组件]"`
 
 ## 手动安装
@@ -83,10 +82,8 @@ pip install -e ".[dev]"
 # kotoba-whisper ASR 后端（可选）：
 pip install -e ".[kotoba]"
 
-# IndexTTS-2.5 TTS 后端（可选，需要 NVIDIA GPU + git + uv）：
-# 官方安装方式：git clone + uv sync --all-extras（独立环境）
-pip install -e ".[indextts]"   # 空标记，不安装任何包
-kakure install-indextts        # 克隆官方仓库并安装依赖
+# audiocpp TTS 引擎（内置，无需 pip 安装；需要 NVIDIA GPU + CUDA 运行时）
+# 模型 GGUF 通过界面 Models 标签页下载，或在 kakure.toml 配置 audiocpp_model 指向本地文件
 
 # Demucs 人声分离（可选，GPU 加速更快）：
 pip install -e ".[demucs]"

@@ -64,21 +64,9 @@ class KotobaWhisperModel(str, Enum):
 
 
 class TTSBackend(str, Enum):
-    """TTS engine backend."""
+    """TTS engine backend (speech synthesis of the Chinese track)."""
 
-    EDGE_TTS = "edge-tts"
-    INDEX_TTS = "indextts"
-
-
-class ChineseVoice(str, Enum):
-    """Available Chinese TTS voices (edge-tts)."""
-
-    XIAOXIAO = "zh-CN-XiaoxiaoNeural"  # Female, warm
-    XIAOYI = "zh-CN-XiaoyiNeural"  # Female, gentle
-    YUNJIAN = "zh-CN-YunjianNeural"  # Male, calm
-    YUNXI = "zh-CN-YunxiNeural"  # Male, warm
-    YUNXIA = "zh-CN-YunxiaNeural"  # Female, sweet
-    YUNYANG = "zh-CN-YunyangNeural"  # Male, news anchor style
+    AUDIOCPP = "audiocpp"  # audio.cpp server (local GPU/CPU, voice cloning)
 
 
 class DemucsModel(str, Enum):
@@ -134,19 +122,23 @@ class Settings(BaseModel):
     # values parallelize batches for faster translation but may hit rate limits.
     translation_max_concurrency: int = Field(default=4, ge=1)
 
-    # TTS backend selection
-    tts_backend: TTSBackend = TTSBackend.EDGE_TTS
+    # TTS backend selection (speech synthesis of the Chinese track)
+    tts_backend: TTSBackend = TTSBackend.AUDIOCPP
 
-    # edge-tts settings
-    chinese_voice: ChineseVoice = ChineseVoice.XIAOXIAO
-    tts_rate: str = "+0%"  # Speech rate adjustment
-    tts_volume: str = "+0%"  # Volume adjustment
-    tts_pitch: str = "+0Hz"  # Pitch adjustment
-
-    # IndexTTS settings
-    indextts_reference_audio: str = ""
-    indextts_model_dir: str = ""
-    indextts_language: str = "zh"
+    # audiocpp TTS settings (audio.cpp server)
+    audiocpp_exe: str = ""  # Path to audiocpp_server.exe; empty = bundled ./audiocpp/audiocpp_server.exe
+    audiocpp_host: str = "127.0.0.1"
+    audiocpp_port: int = 8088
+    audiocpp_backend: str = "cuda"  # "cuda" or "cpu"
+    audiocpp_device: int = 0
+    audiocpp_threads: int = 4
+    audiocpp_family: str = "qwen3_tts"  # audio.cpp model family
+    audiocpp_model: str = ""  # Path to the TTS model (GGUF file or package dir). Empty = auto-discover from HF cache for the family.
+    audiocpp_language: str = "zh"
+    audiocpp_reference_audio: str = ""  # Voice-clone reference audio (path or references/<file>)
+    audiocpp_reference_text: str = ""  # Transcript of the reference audio (improves clone quality)
+    audiocpp_speed: float = 1.0  # Speaking rate (1.0 = normal)
+    audiocpp_max_tokens: int = 0  # 0 = server default; raise if Chinese output is truncated
 
     # Mixing
     mix_mode: MixMode = MixMode.OVERLAY
@@ -170,12 +162,12 @@ class Settings(BaseModel):
     # Paths
     # Relative to the running workspace (current working directory).
     temp_dir: str = "tmp"
-    # Directory for generated SRT subtitle files. Empty = write in the same
-    # directory as the input file (temp_dir in the web UI, input file dir in
-    # the CLI).
-    srt_output_dir: str = ""
+    # Directory for generated bilingual audio and SRT subtitle files.
+    # Empty = write next to the input file (temp_dir in the web UI, input file
+    # dir in the CLI). Relative paths are resolved against the CWD.
+    output_dir: str = ""
     # Unified directory for ALL model downloads (faster-whisper, kotoba-
-    # whisper, IndexTTS, Demucs). Relative to the project root. Empty = use
+    # whisper, audiocpp, Demucs). Relative to the project root. Empty = use
     # each framework's default location (HuggingFace Hub cache, torch hub,
     # ...). Set this when packaging Kakure as a portable build so every
     # model file stays inside the project folder.
@@ -295,7 +287,7 @@ def apply_model_env(settings: Settings | None = None) -> None:
     every framework stores its files under one folder in the project:
 
     - ``HF_HOME`` / ``HF_HUB_CACHE`` -> faster-whisper, kotoba-whisper,
-      IndexTTS and anything else that downloads from the HuggingFace Hub
+      audiocpp and anything else that downloads from the HuggingFace Hub
     - ``TORCH_HOME`` / ``HUB_HOME`` -> Demucs model weights (torch hub)
 
     Must be called before any model library is imported, because
@@ -312,3 +304,21 @@ def apply_model_env(settings: Settings | None = None) -> None:
     os.environ["HF_HUB_CACHE"] = str(base / "huggingface" / "hub")
     os.environ["TORCH_HOME"] = str(base / "torch")
     os.environ["HUB_HOME"] = str(base / "torch")
+
+
+def output_dir_path(settings: Settings, input_path: Path) -> Path:
+    """Resolve and ensure the user-configured output directory.
+
+    Returns an absolute, existing directory for generated audio and subtitle
+    files. When ``output_dir`` is unset, falls back to the input file's parent
+    directory (the common case for the web UI, which keeps outputs alongside
+    the uploaded file).
+    """
+    out = (settings.output_dir or "").strip()
+    if not out:
+        return Path(input_path).parent
+    path = Path(out).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    path.mkdir(parents=True, exist_ok=True)
+    return path

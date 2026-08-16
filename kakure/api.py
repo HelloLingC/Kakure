@@ -7,6 +7,7 @@ import json
 import logging
 import queue as sync_queue
 import shutil
+import subprocess
 import threading
 import time
 import uuid
@@ -80,12 +81,6 @@ def _friendly_error(exc: BaseException) -> str:
             return (
                 "Vocal separation requires Demucs, which is not installed.\n"
                 'Install it with: pip install -e ".[demucs]"'
-            )
-        if exc.name == "indextts" or (exc.name or "").startswith("indextts."):
-            return (
-                "The IndexTTS-2.5 backend is not installed.\n"
-                "Install it by running `kakure install-indextts` (git clone + "
-                "uv sync --all-extras; requires an NVIDIA GPU)."
             )
         if exc.name in ("torch", "torchaudio", "transformers"):
             return (
@@ -177,320 +172,397 @@ def _srt_base(job: Job, input_path: Path, settings: Settings) -> tuple[Path, str
     return output_dir, stem
 
 
+class PipelineError(RuntimeError):
+    """Pipeline failure carrying an optional stage for UI highlighting."""
+
+    def __init__(self, message: str, *, stage: str | None = None):
+        super().__init__(message)
+        self.stage = stage
+
+
+def _run_pipeline(job: Job, input_path: Path, settings: Settings) -> dict[str, Any]:
+    """Run every pipeline stage for a single file, streaming progress events.
+
+    Returns the result dict on success; raises :class:`PipelineError` (or any
+    exception) on failure so the caller decides how to finalize the job.
+    """
+    srt_dir, srt_stem = _srt_base(job, input_path, settings)
+    ckpt = CheckpointStore(input_path, settings)
+
+    # --- Stage: ASR ---
+    _push_event(
+        job,
+        {
+            "type": "progress",
+            "stage": "asr",
+            "status": "running",
+            "message": "Transcribing Japanese audio...",
+        },
+    )
+
+    from kakure.asr import create_asr_processor
+
+    _t0 = time.perf_counter()
+    asr = create_asr_processor(settings)
+    transcription, asr_cached = run_asr(ckpt, lambda: asr.transcribe(input_path))
+    if not transcription.segments:
+        raise PipelineError("No speech segments detected in the audio file.", stage="asr")
+
+    _push_event(
+        job,
+        {
+            "type": "progress",
+            "stage": "asr",
+            "status": "completed",
+            "cached": asr_cached,
+            "segments": [
+                {
+                    "id": seg.id,
+                    "start": seg.start,
+                    "end": seg.end,
+                    "original_text": seg.text,
+                    "translated_text": "",
+                }
+                for seg in transcription.segments
+            ],
+            "segments_count": len(transcription.segments),
+            "language": transcription.language,
+            "duration": transcription.duration,
+            "elapsed_seconds": time.perf_counter() - _t0,
+        },
+    )
+
+    # Export Japanese subtitles right after ASR
+    srt_ja_path = srt_output_path(srt_stem, "ja", srt_dir)
+    write_srt(transcription.segments, srt_ja_path)
+
+    # --- Stage: Translation ---
+    _push_event(
+        job,
+        {
+            "type": "progress",
+            "stage": "translate",
+            "status": "running",
+            "message": "Translating to Chinese...",
+        },
+    )
+
+    from kakure.translator import TranslatedSegment, Translator
+
+    _t0 = time.perf_counter()
+
+    def _translate(segments):
+        translated = [
+            TranslatedSegment(
+                id=seg.id,
+                start=seg.start,
+                end=seg.end,
+                original_text=seg.text,
+                translated_text="",
+            )
+            for seg in segments
+        ]
+        return Translator(settings).translate_segments(translated)
+
+    translated, tr_cached = run_translation(ckpt, transcription.segments, _translate)
+
+    _push_event(
+        job,
+        {
+            "type": "progress",
+            "stage": "translate",
+            "status": "completed",
+            "cached": tr_cached,
+            "elapsed_seconds": time.perf_counter() - _t0,
+            "segments": [
+                {
+                    "id": seg.id,
+                    "start": seg.start,
+                    "end": seg.end,
+                    "original_text": seg.original_text,
+                    "translated_text": seg.translated_text,
+                }
+                for seg in translated
+            ],
+        },
+    )
+
+    # Export Chinese subtitles right after translation
+    srt_zh_path = srt_output_path(srt_stem, "zh", srt_dir)
+    write_srt(translated, srt_zh_path, text=lambda seg: seg.translated_text)
+
+    # --- Stage: TTS ---
+    _push_event(
+        job,
+        {
+            "type": "progress",
+            "stage": "tts",
+            "status": "running",
+            "message": "Generating Chinese voice...",
+        },
+    )
+
+    from kakure.tts import create_tts_processor
+
+    _t0 = time.perf_counter()
+    segment_dicts = [
+        {
+            "id": seg.id,
+            "start": seg.start,
+            "end": seg.end,
+            "original_text": seg.original_text,
+            "translated_text": seg.translated_text,
+        }
+        for seg in translated
+    ]
+    tts = create_tts_processor(settings)
+    tts_dicts, tts_reused = run_tts(
+        ckpt,
+        segment_dicts,
+        lambda needed, outdir: [
+            {
+                "segment_id": r.segment_id,
+                "audio_path": str(r.audio_path),
+                "duration_ms": r.duration_ms,
+            }
+            for r in tts.generate_sync(needed, output_dir=outdir)
+        ],
+    )
+
+    _push_event(
+        job,
+        {
+            "type": "progress",
+            "stage": "tts",
+            "status": "completed",
+            "cached": tts_reused > 0,
+            "elapsed_seconds": time.perf_counter() - _t0,
+            "segments": len(tts_dicts),
+        },
+    )
+
+    # --- Stage: Vocal separation (optional) ---
+    separated = None
+    if settings.separate_vocals:
+        _push_event(
+            job,
+            {
+                "type": "progress",
+                "stage": "separate",
+                "status": "running",
+                "message": "Separating vocals from background...",
+            },
+        )
+
+        from kakure.separator import VocalSeparator
+
+        _t0 = time.perf_counter()
+        separator = VocalSeparator(settings)
+        separated, sep_cached = run_separation(
+            ckpt,
+            input_path,
+            lambda outdir: separator.separate(input_path, output_dir=outdir),
+        )
+
+        _push_event(
+            job,
+            {
+                "type": "progress",
+                "stage": "separate",
+                "status": "completed",
+                "cached": sep_cached,
+                "elapsed_seconds": time.perf_counter() - _t0,
+            },
+        )
+    else:
+        _push_event(
+            job,
+            {
+                "type": "progress",
+                "stage": "separate",
+                "status": "skipped",
+            },
+        )
+
+    # --- Stage: Mixing ---
+    _push_event(
+        job,
+        {
+            "type": "progress",
+            "stage": "mix",
+            "status": "running",
+            "message": "Mixing audio tracks...",
+        },
+    )
+
+    from pydub import AudioSegment
+
+    from kakure.mixer import AudioMixer, MixInput
+
+    original_audio = AudioSegment.from_file(str(input_path))
+    _t0 = time.perf_counter()
+    mix_input = MixInput(
+        original_audio=original_audio,
+        segments=segment_dicts,
+        tts_results=tts_dicts,
+        separated=separated,
+    )
+    mixer = AudioMixer(settings)
+    mixed_audio = mixer.mix(mix_input)
+
+    _push_event(
+        job,
+        {
+            "type": "progress",
+            "stage": "mix",
+            "status": "completed",
+            "elapsed_seconds": time.perf_counter() - _t0,
+        },
+    )
+
+    # --- Stage: Export ---
+    _push_event(
+        job,
+        {
+            "type": "progress",
+            "stage": "export",
+            "status": "running",
+            "message": "Exporting final audio...",
+        },
+    )
+
+    output_stem = (
+        Path(job.original_name).stem
+        if settings.output_dir and job.original_name
+        else input_path.stem
+    )
+    output_path = output_dir_path(settings, input_path) / (
+        f"{output_stem}_bilingual.{settings.output_format}"
+    )
+    _t0 = time.perf_counter()
+    mixer.export(
+        mixed_audio,
+        output_path,
+        format=settings.output_format,
+        bitrate=settings.output_bitrate,
+        sample_rate=settings.output_sample_rate,
+    )
+
+    srt_path = srt_output_path(srt_stem, "bilingual", srt_dir)
+    write_srt(
+        translated,
+        srt_path,
+        text=lambda seg: f"{seg.original_text}\n{seg.translated_text}",
+    )
+    _push_event(
+        job,
+        {
+            "type": "progress",
+            "stage": "export",
+            "status": "completed",
+            "elapsed_seconds": time.perf_counter() - _t0,
+        },
+    )
+
+    duration = len(mixed_audio) / 1000.0
+    segments_data = [
+        {
+            "id": seg.id,
+            "start": seg.start,
+            "end": seg.end,
+            "original_text": seg.original_text,
+            "translated_text": seg.translated_text,
+        }
+        for seg in translated
+    ]
+
+    return {
+    "output_path": str(output_path),
+    "srt_path": str(srt_path),
+    "srt_ja_path": str(srt_ja_path),
+    "srt_zh_path": str(srt_zh_path),
+    "duration": duration,
+    "segments": segments_data,
+    "vocals_separated": separated is not None,
+    }
+
+
+def _finalize_job(job: Job, result: dict[str, Any] | None, exc: BaseException | None) -> None:
+    if exc is None:
+        job.result = result
+        job.status = "completed"
+        _push_event(job, {"type": "finished", **(result or {})})
+    else:
+        logger.exception("Pipeline job %s failed", job.id)
+        job.status = "failed"
+        job.error = _friendly_error(exc)
+        stage = exc.stage if isinstance(exc, PipelineError) else None
+        _push_event(job, {"type": "error", "stage": stage, "message": job.error})
+
+
 def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
     try:
         job.status = "running"
-        srt_dir, srt_stem = _srt_base(job, input_path, settings)
-        ckpt = CheckpointStore(input_path, settings)
+        result = _run_pipeline(job, input_path, settings)
+        _finalize_job(job, result, None)
+    except Exception as e:
+        _finalize_job(job, None, e)
 
-        # --- Stage: ASR ---
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "asr",
-                "status": "running",
-                "message": "Transcribing Japanese audio...",
-            },
-        )
 
-        from kakure.asr import create_asr_processor
-
-        _t0 = time.perf_counter()
-        asr = create_asr_processor(settings)
-        transcription, asr_cached = run_asr(ckpt, lambda: asr.transcribe(input_path))
-        if not transcription.segments:
+def _run_batch_job(job: Job, files: list[Path], settings: Settings) -> None:
+    """Run the pipeline over a list of files, streaming per-file progress."""
+    try:
+        job.status = "running"
+        outputs: list[str] = []
+        succeeded = 0
+        total = len(files)
+        for idx, f in enumerate(files, 1):
             _push_event(
                 job,
                 {
-                    "type": "error",
-                    "stage": "asr",
-                    "message": "No speech segments detected in the audio file.",
-                },
-            )
-            job.status = "failed"
-            job.error = "No speech segments detected"
-            return
-
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "asr",
-                "status": "completed",
-                "cached": asr_cached,
-                "segments": [
-                    {
-                        "id": seg.id,
-                        "start": seg.start,
-                        "end": seg.end,
-                        "original_text": seg.text,
-                        "translated_text": "",
-                    }
-                    for seg in transcription.segments
-                ],
-                "segments_count": len(transcription.segments),
-                "language": transcription.language,
-                "duration": transcription.duration,
-                "elapsed_seconds": time.perf_counter() - _t0,
-            },
-        )
-
-        # Export Japanese subtitles right after ASR
-        srt_ja_path = srt_output_path(srt_stem, "ja", srt_dir)
-        write_srt(transcription.segments, srt_ja_path)
-
-        # --- Stage: Translation ---
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "translate",
-                "status": "running",
-                "message": "Translating to Chinese...",
-            },
-        )
-
-        from kakure.translator import TranslatedSegment, Translator
-
-        _t0 = time.perf_counter()
-
-        def _translate(segments):
-            translated = [
-                TranslatedSegment(
-                    id=seg.id,
-                    start=seg.start,
-                    end=seg.end,
-                    original_text=seg.text,
-                    translated_text="",
-                )
-                for seg in segments
-            ]
-            return Translator(settings).translate_segments(translated)
-
-        translated, tr_cached = run_translation(ckpt, transcription.segments, _translate)
-
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "translate",
-                "status": "completed",
-                "cached": tr_cached,
-                "elapsed_seconds": time.perf_counter() - _t0,
-                "segments": [
-                    {
-                        "id": seg.id,
-                        "start": seg.start,
-                        "end": seg.end,
-                        "original_text": seg.original_text,
-                        "translated_text": seg.translated_text,
-                    }
-                    for seg in translated
-                ],
-            },
-        )
-
-        # Export Chinese subtitles right after translation
-        srt_zh_path = srt_output_path(srt_stem, "zh", srt_dir)
-        write_srt(translated, srt_zh_path, text=lambda seg: seg.translated_text)
-
-        # --- Stage: TTS ---
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "tts",
-                "status": "running",
-                "message": "Generating Chinese voice...",
-            },
-        )
-
-        from kakure.tts import create_tts_processor
-
-        _t0 = time.perf_counter()
-        segment_dicts = [
-            {
-                "id": seg.id,
-                "start": seg.start,
-                "end": seg.end,
-                "original_text": seg.original_text,
-                "translated_text": seg.translated_text,
-            }
-            for seg in translated
-        ]
-        tts = create_tts_processor(settings)
-        tts_dicts, tts_reused = run_tts(
-            ckpt,
-            segment_dicts,
-            lambda needed, outdir: [
-                {
-                    "segment_id": r.segment_id,
-                    "audio_path": str(r.audio_path),
-                    "duration_ms": r.duration_ms,
-                }
-                for r in tts.generate_sync(needed, output_dir=outdir)
-            ],
-        )
-
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "tts",
-                "status": "completed",
-                "cached": tts_reused > 0,
-                "elapsed_seconds": time.perf_counter() - _t0,
-                "segments": len(tts_dicts),
-            },
-        )
-
-        # --- Stage: Vocal separation (optional) ---
-        separated = None
-        if settings.separate_vocals:
-            _push_event(
-                job,
-                {
-                    "type": "progress",
-                    "stage": "separate",
+                    "type": "batch",
+                    "index": idx,
+                    "total": total,
+                    "file": str(f),
                     "status": "running",
-                    "message": "Separating vocals from background...",
                 },
             )
-
-            from kakure.separator import VocalSeparator
-
-            _t0 = time.perf_counter()
-            separator = VocalSeparator(settings)
-            separated, sep_cached = run_separation(
-                ckpt,
-                input_path,
-                lambda outdir: separator.separate(input_path, output_dir=outdir),
-            )
-
-            _push_event(
-                job,
-                {
-                    "type": "progress",
-                    "stage": "separate",
-                    "status": "completed",
-                    "cached": sep_cached,
-                    "elapsed_seconds": time.perf_counter() - _t0,
-                },
-            )
-        else:
-            _push_event(
-                job,
-                {
-                    "type": "progress",
-                    "stage": "separate",
-                    "status": "skipped",
-                },
-            )
-
-        # --- Stage: Mixing ---
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "mix",
-                "status": "running",
-                "message": "Mixing audio tracks...",
-            },
-        )
-
-        from pydub import AudioSegment
-
-        from kakure.mixer import AudioMixer, MixInput
-
-        original_audio = AudioSegment.from_file(str(input_path))
-        _t0 = time.perf_counter()
-        mix_input = MixInput(
-            original_audio=original_audio,
-            segments=segment_dicts,
-            tts_results=tts_dicts,
-            separated=separated,
-        )
-        mixer = AudioMixer(settings)
-        mixed_audio = mixer.mix(mix_input)
-
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "mix",
-                "status": "completed",
-                "elapsed_seconds": time.perf_counter() - _t0,
-            },
-        )
-
-        # --- Stage: Export ---
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "export",
-                "status": "running",
-                "message": "Exporting final audio...",
-            },
-        )
-
-        output_stem = (
-            Path(job.original_name).stem
-            if settings.output_dir and job.original_name
-            else input_path.stem
-        )
-        output_path = output_dir_path(settings, input_path) / (
-            f"{output_stem}_bilingual.{settings.output_format}"
-        )
-        _t0 = time.perf_counter()
-        mixer.export(
-            mixed_audio,
-            output_path,
-            format=settings.output_format,
-            bitrate=settings.output_bitrate,
-            sample_rate=settings.output_sample_rate,
-        )
-
-        srt_path = srt_output_path(srt_stem, "bilingual", srt_dir)
-        write_srt(
-            translated,
-            srt_path,
-            text=lambda seg: f"{seg.original_text}\n{seg.translated_text}",
-        )
-        _push_event(
-            job,
-            {
-                "type": "progress",
-                "stage": "export",
-                "status": "completed",
-                "elapsed_seconds": time.perf_counter() - _t0,
-            },
-        )
-
-        duration = len(mixed_audio) / 1000.0
-        segments_data = [
-            {
-                "id": seg.id,
-                "start": seg.start,
-                "end": seg.end,
-                "original_text": seg.original_text,
-                "translated_text": seg.translated_text,
-            }
-            for seg in translated
-        ]
-
+            try:
+                job.original_name = f.name
+                result = _run_pipeline(job, f, settings)
+                outputs.append(result["output_path"])
+                succeeded += 1
+                _push_event(
+                    job,
+                    {
+                        "type": "batch",
+                        "index": idx,
+                        "total": total,
+                        "file": str(f),
+                        "status": "completed",
+                        "output_path": result["output_path"],
+                    },
+                )
+            except Exception as e:
+                logger.exception("Batch file failed: %s", f)
+                _push_event(
+                    job,
+                    {
+                        "type": "batch",
+                        "index": idx,
+                        "total": total,
+                        "file": str(f),
+                        "status": "error",
+                        "message": _friendly_error(e),
+                    },
+                )
         job.result = {
-            "output_path": str(output_path),
-            "srt_path": str(srt_path),
-            "srt_ja_path": str(srt_ja_path),
-            "srt_zh_path": str(srt_zh_path),
-            "duration": duration,
-            "segments": segments_data,
-            "vocals_separated": separated is not None,
+            "outputs": outputs,
+            "succeeded": succeeded,
+            "total": total,
+            "batch": True,
         }
         job.status = "completed"
-
         _push_event(
             job,
             {
@@ -498,12 +570,8 @@ def _run_pipeline_job(job: Job, input_path: Path, settings: Settings) -> None:
                 **job.result,
             },
         )
-
     except Exception as e:
-        logger.exception("Pipeline job %s failed", job.id)
-        job.status = "failed"
-        job.error = _friendly_error(e)
-        _push_event(job, {"type": "error", "message": job.error})
+        _finalize_job(job, None, e)
 
 
 # ---------------------------------------------------------------------------
@@ -587,6 +655,124 @@ async def process_audio(file: UploadFile = File(...)):
     return JSONResponse({"job_id": job.id})
 
 
+@app.post("/api/process/path")
+async def process_local_path(body: dict[str, Any]):
+    """Process local files or a folder path instead of an upload.
+
+    Local machine use only: the server reads paths directly from disk.
+    Accepted bodies:
+      - ``{"path": "<file>"}`` — single file pipeline
+      - ``{"path": "<folder>", "recursive": bool}`` — batch over the folder's
+        audio files (optionally recursive)
+      - ``{"paths": ["<file>", ...]}`` — batch over an explicit file list
+    """
+    settings = load_settings()
+    recursive = bool(body.get("recursive", False))
+    paths = body.get("paths")
+
+    job = _create_job()
+    if paths:
+        files = [Path(p).expanduser() for p in paths if p and Path(p).expanduser().is_file()]
+        if not files:
+            raise HTTPException(400, "No readable audio files given in 'paths'")
+        runner = _run_batch_job
+        runner_args = (job, files, settings)
+    else:
+        raw = (body.get("path") or "").strip()
+        if not raw:
+            raise HTTPException(400, "Missing 'path'")
+
+        path = Path(raw).expanduser()
+        if not path.exists():
+            raise HTTPException(404, f"Path not found: {raw}")
+
+        if path.is_file():
+            job.original_name = path.name
+            runner = _run_pipeline_job
+            runner_args = (job, path, settings)
+        else:
+            from kakure.batch import collect_audio_files
+
+            files = collect_audio_files([str(path)], recursive=recursive)
+            if not files:
+                raise HTTPException(400, f"No audio files found in: {raw}")
+            runner = _run_batch_job
+            runner_args = (job, files, settings)
+
+    thread = threading.Thread(
+        target=runner,
+        args=runner_args,
+        daemon=True,
+    )
+    thread.start()
+
+    return JSONResponse({"job_id": job.id})
+
+
+@app.post("/api/process/path/list")
+async def process_local_path_list(body: dict[str, Any]):
+    """List the audio files a folder contains, for the Process tab's Load button.
+
+    Returns ``{"path": str, "files": [{"path", "name", "size", "duration_seconds"}]}``
+    sorted by name. Only directories are accepted.
+    """
+    raw = (body.get("path") or "").strip()
+    recursive = bool(body.get("recursive", False))
+    if not raw:
+        raise HTTPException(400, "Missing 'path'")
+
+    path = Path(raw).expanduser()
+    if not path.is_dir():
+        raise HTTPException(400, f"Not a folder: {raw}")
+
+    from kakure.batch import collect_audio_files
+
+    files = collect_audio_files([str(path)], recursive=recursive)
+    return JSONResponse(
+        {
+            "path": str(path),
+            "recursive": recursive,
+            "files": [
+                {
+                    "path": str(f),
+                    "name": f.name,
+                    "size": f.stat().st_size,
+                    "duration_seconds": _audio_duration(f),
+                }
+                for f in sorted(files, key=lambda p: p.name.lower())
+            ],
+        }
+    )
+
+
+def _audio_duration(path: Path) -> float | None:
+    """Best-effort duration in seconds via ffprobe, or None when unavailable."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    try:
+        proc = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if proc.returncode != 0:
+            return None
+        return float(proc.stdout.strip())
+    except Exception:
+        return None
+
+
 @app.get("/api/process/{job_id}")
 async def process_progress(job_id: str):
     with _jobs_lock:
@@ -617,6 +803,8 @@ async def process_result(job_id: str):
         raise HTTPException(500, job.error or "Job failed")
 
     assert job.result is not None
+    if job.result.get("batch"):
+        raise HTTPException(409, "Batch job has no single output; see job result for paths")
     output_path = Path(job.result["output_path"])
     media_type = "audio/mpeg" if output_path.suffix == ".mp3" else "audio/wav"
     return FileResponse(output_path, media_type=media_type, filename=output_path.name)

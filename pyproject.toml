@@ -22,9 +22,9 @@ classifiers = [
 ]
 dependencies = [
     "faster-whisper>=1.0.0",
-    "edge-tts>=6.1.0",
     "pydub>=0.25.1",
     "openai>=1.0.0",
+    "httpx>=0.27.0",
     "pydantic>=2.0.0",
     "tomlkit>=0.12.0",
     "fastapi>=0.109.0",
@@ -46,11 +46,6 @@ kotoba = [
     "accelerate>=0.20.0",
     "torchaudio>=2.0.0",
 ]
-# IndexTTS-2.5 is installed via its official method (git clone + uv sync
-# --all-extras) into its own venv; Kakure bridges to it over a subprocess.
-# The extra is kept as a no-op marker so `pip install -e ".[indextts]"` and
-# packaging commands keep working. See `kakure install-indextts`.
-indextts = []
 demucs = [
     "demucs>=4.1.0",
 ]

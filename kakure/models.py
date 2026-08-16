@@ -1,4 +1,4 @@
-"""Model management - list, download, and delete AI models (Whisper, IndexTTS).
+"""Model management - list, download, and delete AI models (Whisper, audiocpp TTS).
 
 All models are stored in the HuggingFace Hub cache (``HF_HUB_CACHE`` /
 ``HF_HOME`` or ``~/.cache/huggingface/hub``). When ``model_dir`` is set in
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # Group ids used by the web UI
 GROUP_WHISPER = "whisper"
 GROUP_KOTOBA = "kotoba"
-GROUP_INDEXTTS = "indextts"
+GROUP_AUDIOCPP = "audiocpp"
 
 MODEL_GROUPS: list[dict] = [
     {
@@ -104,43 +104,17 @@ MODEL_GROUPS: list[dict] = [
         ],
     },
     {
-        "id": GROUP_INDEXTTS,
-        "name": "IndexTTS (TTS)",
+        "id": GROUP_AUDIOCPP,
+        "name": "audiocpp (TTS)",
         "models": [
             {
-                "id": "indextts-main",
-                "name": "IndexTTS-2 main model",
-                "repo_id": "IndexTeam/IndexTTS-2",
-                "approx_size": "~6 GB",
-                "probe_file": "config.yaml",
-            },
-            {
-                "id": "indextts-w2v",
-                "name": "w2v-bert-2.0 (speech encoder)",
-                "repo_id": "facebook/w2v-bert-2.0",
-                "approx_size": "~2.3 GB",
-                "probe_file": "model.safetensors",
-            },
-            {
-                "id": "indextts-maskgct",
-                "name": "MaskGCT (semantic codec)",
-                "repo_id": "amphion/MaskGCT",
-                "approx_size": "~177 MB",
-                "probe_file": "semantic_codec/model.safetensors",
-            },
-            {
-                "id": "indextts-campplus",
-                "name": "Cam++ (speaker embedding)",
-                "repo_id": "funasr/campplus",
-                "approx_size": "~28 MB",
-                "probe_file": "campplus_cn_common.bin",
-            },
-            {
-                "id": "indextts-bigvgan",
-                "name": "BigVGAN (vocoder)",
-                "repo_id": "nvidia/bigvgan_v2_22khz_80band_256x",
-                "approx_size": "~450 MB",
-                "probe_file": "config.json",
+                "id": "audiocpp-qwen3-tts-1.7b-q8_0",
+                "name": "Qwen3-TTS 1.7B (q8_0, 中文/日英)",
+                "repo_id": "audio-cpp/audio.cpp-gguf",
+                "file": "Qwen3-TTS-12Hz-1.7B-Base-GGUF/qwen3-tts-12hz-1.7b-base-q8_0_v2.gguf",
+                "approx_size": "~1.8 GB",
+                "probe_file": "Qwen3-TTS-12Hz-1.7B-Base-GGUF/qwen3-tts-12hz-1.7b-base-q8_0_v2.gguf",
+                "family": "qwen3_tts",
             },
         ],
     },
@@ -194,6 +168,19 @@ def _is_installed(repo_id: str, probe_file: str) -> bool:
         return False
 
 
+def _installed_file_size(repo_id: str, probe_file: str) -> int | None:
+    """Return on-disk size of ``probe_file`` in the local cache, or None."""
+    try:
+        from huggingface_hub import try_to_load_from_cache
+
+        path = try_to_load_from_cache(repo_id, probe_file, cache_dir=str(hf_cache_dir()))
+        if path and Path(path).exists():
+            return Path(path).stat().st_size
+    except Exception:
+        return None
+    return None
+
+
 def model_status() -> dict:
     """Build the model catalog annotated with install status and sizes.
 
@@ -210,7 +197,12 @@ def model_status() -> dict:
         for model in group["models"]:
             entry = dict(model)
             entry["installed"] = _is_installed(model["repo_id"], model["probe_file"])
-            entry["size_on_disk"] = sizes.get(model["repo_id"])
+            if model.get("file"):
+                entry["size_on_disk"] = _installed_file_size(
+                    model["repo_id"], model["probe_file"]
+                )
+            else:
+                entry["size_on_disk"] = sizes.get(model["repo_id"])
             models.append(entry)
         groups.append({**group, "models": models})
     from kakure.config import load_settings, model_dir_path
@@ -254,7 +246,16 @@ def download_model(repo_id: str, on_progress: Callable[[int, int], None] | None 
             if on_progress is not None and self.unit == "B" and self.total:
                 on_progress(int(min(self.n, self.total)), int(self.total))
 
+    info = _model_by_repo(repo_id)
+    single_file = info.get("file") if info else None
+
     logger.info("Downloading model '%s' into %s", repo_id, hf_cache_dir())
+    if single_file:
+        from huggingface_hub import hf_hub_download
+
+        return hf_hub_download(
+            repo_id, filename=single_file, cache_dir=str(hf_cache_dir()), tqdm_class=_ProgressTqdm
+        )
     return snapshot_download(repo_id, cache_dir=str(hf_cache_dir()), tqdm_class=_ProgressTqdm)
 
 
@@ -267,17 +268,33 @@ def delete_model(repo_id: str) -> int:
     Returns:
         The number of bytes freed (0 if nothing was cached).
     """
-    from huggingface_hub import scan_cache_dir
+    from huggingface_hub import scan_cache_dir, try_to_load_from_cache
 
     cache_dir = hf_cache_dir()
     if not cache_dir.is_dir():
         return 0
-    info = scan_cache_dir(cache_dir=str(cache_dir))
-    repo = next((r for r in info.repos if r.repo_id == repo_id), None)
+
+    info = _model_by_repo(repo_id)
+
+    # Single-file models (e.g. a specific audiocpp GGUF) are deleted by file so
+    # we don't evict the whole snapshot repository they live in.
+    freed = 0
+    if info.get("file"):
+        cached = try_to_load_from_cache(
+            repo_id, info["file"], cache_dir=str(cache_dir)
+        )
+        if cached and Path(cached).exists():
+            freed = Path(cached).stat().st_size
+            Path(cached).unlink()
+            logger.info("Deleted cached file '%s' (freed %d bytes)", cached, freed)
+            return freed
+
+    info_cache = scan_cache_dir(cache_dir=str(cache_dir))
+    repo = next((r for r in info_cache.repos if r.repo_id == repo_id), None)
     if repo is None:
         return 0
 
-    strategy = info.delete_revisions(*[rev.commit_hash for rev in repo.revisions])
+    strategy = info_cache.delete_revisions(*[rev.commit_hash for rev in repo.revisions])
     freed = strategy.expected_freed_size
     strategy.execute()
     logger.info("Deleted cached model '%s' (freed %d bytes)", repo_id, freed)

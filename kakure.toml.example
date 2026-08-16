@@ -52,24 +52,38 @@ translation_batch_token_limit = 8000
 # but may hit provider rate limits. Set to 4 for a good speed/limit balance.
 translation_max_concurrency = 4
 
-# TTS backend: "edge-tts" or "indextts"
-tts_backend = "edge-tts"
+# TTS backend. Speech synthesis is performed by the audiocpp engine
+# (audio.cpp server / audiocpp_server.exe sidecar). This is the only backend.
+tts_backend = "audiocpp"
 
-# Chinese TTS voice (edge-tts backend)
-chinese_voice = "zh-CN-XiaoxiaoNeural"
+# audiocpp server connection
+audiocpp_host = "127.0.0.1"
+audiocpp_port = 8088
 
-# TTS adjustments (edge-tts backend)
-tts_rate = "+0%"
-tts_volume = "+0%"
-tts_pitch = "+0Hz"
+# Compute backend for audiocpp: "cuda" (GPU) or "cpu"
+audiocpp_backend = "cuda"
+audiocpp_device = 0
 
-# IndexTTS settings (only used when tts_backend = "indextts")
-# Required: path to a 3-10 second reference audio file for voice cloning
-indextts_reference_audio = ""
-# Optional: path to local model checkpoints (auto-downloads from HuggingFace if not set)
-indextts_model_dir = ""
-# Language for IndexTTS synthesis
-indextts_language = "zh"
+# Model family (matches an entry in the Models tab). qwen3_tts is Chinese/Japanese
+# capable and supports zero-shot voice cloning.
+audiocpp_family = "qwen3_tts"
+# Optional: explicit path to a local .gguf model. Empty = auto-discover the
+# family default from the HuggingFace cache.
+audiocpp_model = ""
+
+# Synthesis language (zh/en/ja/...)
+audiocpp_language = "zh"
+
+# Optional voice cloning: a 3-10s reference audio and its transcript.
+# Audio path may be absolute or "references/<file>" (resolved in the
+# project's references/ folder).
+audiocpp_reference_audio = ""
+audiocpp_reference_text = ""
+
+# Speech speed multiplier (0.5 - 2.0). 1.0 = normal.
+audiocpp_speed = 1.0
+# Max tokens per synthesis (0 = model default).
+audiocpp_max_tokens = 0
 
 # Mixing mode: "dual", "overlay", "sequential", "whisper", "spatial"
 mix_mode = "overlay"
@@ -102,16 +116,17 @@ output_sample_rate = 44100
 temp_dir = "tmp"
 
 # Unified directory for ALL model downloads (faster-whisper, kotoba-whisper,
-# IndexTTS, Demucs). Relative to the project root. Leave empty to use each
+# audiocpp TTS, Demucs). Relative to the project root. Leave empty to use each
 # framework's default location (HuggingFace Hub cache, torch hub, ...).
 # Set this when packaging Kakure as a portable build (整合包) so every model
 # file stays inside the project folder.
 model_dir = ""
 
-# Directory for generated SRT subtitle files ({stem}_ja.srt, {stem}_zh.srt,
+# Directory for generated bilingual audio and SRT subtitle files
+# ({stem}_bilingual.{format}, {stem}_ja.srt, {stem}_zh.srt,
 # {stem}_bilingual.srt). Leave empty to write in the same directory as the
 # input file (temp_dir in the web UI, input file directory in the CLI).
-srt_output_dir = ""
+output_dir = ""
 
 # Checkpoints - cache pipeline stage results (ASR, translation, TTS, vocal
 # separation) keyed by input-file hash so re-running the same file skips

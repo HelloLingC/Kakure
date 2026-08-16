@@ -20,8 +20,10 @@ _openai_response = httpx.Response(200, request=_openai_request)
             "Demucs",
         ),
         (
-            ModuleNotFoundError("No module named 'indextts'", name="indextts"),
-            "IndexTTS",
+            # No special-case mapping exists for an arbitrary missing module;
+            # the raw exception text (which names the module) is surfaced.
+            ModuleNotFoundError("No module named 'some_missing_pkg'", name="some_missing_pkg"),
+            "some_missing_pkg",
         ),
         (
             ModuleNotFoundError("No module named 'torch'", name="torch"),

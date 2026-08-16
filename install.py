@@ -62,7 +62,7 @@ def check_python_version() -> None:
     if sys.version_info < (3, 10) or sys.version_info >= (3, 12):  # noqa: UP036
         print(
             f"[ERROR] Detected Python {sys.version_info.major}.{sys.version_info.minor}, "
-            "which is unsupported (IndexTTS-2.5 requires Python 3.10-3.11)."
+            "which is unsupported (Kakure requires Python 3.10 or 3.11)."
         )
         print("       Please install Python 3.11 and re-run this installer.")
         pause()
@@ -117,50 +117,6 @@ def install_package() -> None:
         pause()
         sys.exit(1)
     print("Dependencies installed.", flush=True)
-    print()
-
-
-def install_indextts() -> None:
-    """Optionally install IndexTTS-2.5 via its official method (clone + uv sync).
-
-    IndexTTS-2.5 is a separate project (index-tts/index-tts) managed with its
-    own venv via uv, so this step clones it and runs `uv sync --all-extras`
-    inside the clone. It needs git, an NVIDIA GPU, and ~6GB of VRAM.
-    """
-    print()
-    print("Install IndexTTS-2.5 TTS backend (voice cloning)? [y/N] (Enter=no)")
-    print("  Requires: git, NVIDIA CUDA GPU (~6GB VRAM), ~10GB disk download.")
-    if ask("").lower() != "y":
-        print("Skipping IndexTTS-2.5.")
-        return
-
-    repo = ROOT / "indextts-src"
-    print(f"Installing the official IndexTTS-2.5 into {repo} ...", flush=True)
-    env = dict(os.environ)
-
-    # uv is the official way to install index-tts; install it into the venv if
-    # it is not already available.
-    if shutil.which("uv") is None:
-        print("Installing uv ...", flush=True)
-        if run([str(VENV_PY), "-m", "pip", "install", "uv", "--quiet"], env=env) != 0:
-            print("[ERROR] Failed to install uv. Re-run and pick the mirror option, or "
-                  "install uv manually: pip install -U uv")
-            pause()
-            sys.exit(1)
-
-    # Delegate the clone + uv sync to Kakure's own installer command (runs in
-    # the venv where kakure is importable). install.py itself is stdlib-only
-    # and may run under a system Python, so no kakure imports here. The command
-    # also persists indextts_repo_dir into kakure.toml.
-    cmd = [str(VENV_PY), "-m", "kakure.cli", "install-indextts", "--repo", str(repo)]
-    if run(cmd, env=env) != 0:
-        print("[ERROR] Failed to install IndexTTS-2.5. See the output above.")
-        pause()
-        sys.exit(1)
-
-    print()
-    print("IndexTTS-2.5 installed. Download its models via the Models tab "
-          "(~6GB main checkpoint + auxiliary models).")
     print()
 
 
@@ -321,7 +277,6 @@ def main() -> None:
     install_package()
     setup_ffmpeg()
     setup_config()
-    install_indextts()
     finalize()
 
 
